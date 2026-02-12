@@ -62,11 +62,11 @@ This ensures confidentiality even in the event of server compromise.
     (python -m venv .venv)
     ..venv\Scripts\Activate.ps1
 - Install dependencies (within backend directory)
-    pip install --upgrade pip
-    pip install -r requirements.txt
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
 - From backend run locally (currently in development)
-    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-    Open API docs: http://localhost:8000/docs
-    Health: http://localhost:8000/health
-    Auth base: POST http://localhost:8000/api/auth/register
-    Vault base: POST http://localhost:8000/api/vault/save
+    - uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    - Open API docs: http://localhost:8000/docs
+    - Health: http://localhost:8000/health
+    - Auth base: POST http://localhost:8000/api/auth/register
+    - Vault base: POST http://localhost:8000/api/vault/save
