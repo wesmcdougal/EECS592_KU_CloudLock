@@ -1,4 +1,4 @@
-# app/api/vault.py
+# supports saving and retrieving an encrypted vault; it expects client-side encrypted data (good for zero-knowledge).
 from fastapi import APIRouter, HTTPException, status, Header
 from app.models.schemas import SaveVaultRequest, SaveVaultResponse, VaultResponse
 import time

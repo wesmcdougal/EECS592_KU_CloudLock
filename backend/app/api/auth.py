@@ -1,4 +1,4 @@
-# app/api/auth.py
+# supports register, login, and a simple me token lookup.
 from fastapi import APIRouter, HTTPException, status
 from app.models.schemas import (
     RegisterRequest, RegisterResponse,

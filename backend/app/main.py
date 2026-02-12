@@ -1,4 +1,4 @@
-# app/main.py
+# runs a FastAPI app with CORS and OpenAPI docs (/docs, /redoc)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
