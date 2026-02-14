@@ -28,217 +28,270 @@ uvicorn app.main:app --reload --port 8000
 
 Visit http://localhost:8000/docs for API documentation.
 
-### 6. Run Tests on the localhost:8000
-    #### Test 1: Health Check (ENDPOINT: Get /health)
-        ##### 1. Find GET /health
-        ##### 2. Click "Try it out"
-        ##### 3. Click Execute
-        Expected Response (200 OK)
-        ```bash
-        {
-        "status": "healthy",
-        "service": "cloudlock-api",
-        "version": "1.0.0"
-        }
-        ```
+## 6. API Testing Guide
 
-    #### Test 2: Register User (ENDPOINT: POST /api/auth/register)
-        ##### 1. Find POST /api/auth/register
-        ##### 2. Click "Try it out"
-        ##### 3. Copy and paste the following into Request body:
-        ```bash
-        {
-        "email": "alice@example.com",
-        "password": "AlicePass123!",
-        "auth_image_id": "img_001"
-        }
-        ```
-        ##### 4. Click Execute
-        Expected Response (201 Created)
-        ```bash
-        {
-        "message": "User registered successfully",
-        "user_id": "123e4567-e89b-12d3-a456-426614174000",   <== Randomized
-        "email": "alice@example.com",
-        "created_at": 1707953191 <== example time
-        }
-        ```
+### Test 1: Health Check
+**Endpoint:** `GET /health`
 
-    #### Test 3: Check User in Domain (ENDPOINT: GET /api/auth/admin/users)
-        ##### 1. Find GET /api/auth/admin/users
-        ##### 2. Click "Try it out"
-        ##### 3. Click Execute
-        Expected Response (200 OK)
-        ```bash
-        {
-        "total_users": 1,
-        "users": [
-            {
-            "user_id": "123e4567-e89b-12d3-a456-426614174000",     <== Randomized
-            "email": "alice@example.com",
-            "created_at": 1707953191,    <== example time
-            "account_status": "active",
-            "last_login": null,
-            "failed_attempts": 0
-            }
-        ]
-        }
-        ```
+1. Find GET /health
+2. Click "Try it out"
+3. Click "Execute"
 
-    #### Test 4: Login User (ENDPOINT: POST /api/auth/login)
-        ##### 1. Find POST /api/auth/login
-        ##### 2. Click "Try it out"
-        ##### 3. Copy and paste the following into Request body:
-        ```bash
-        {
-        "email": "alice@example.com",
-        "password": "AlicePass123!",
-        "device_fingerprint": "my_laptop_123"
-        }
-        ```
-        ##### 4. Click Execute
-        Expected Response (200 OK)
-        ```bash
-        {
-        "access_token": "token_abc123-def456-xyz789-ghijkl", <== SAVE THIS FOR LATER TESTS
-        "refresh_token": null,
-        "user_id": "123e4567-e89b-12d3-a456-426614174000",
-        "email": "alice@example.com",
-        "requires_mfa": false
-        }
-        ```
+**Expected Response (200 OK):**
+```json
+{
+  "status": "healthy",
+  "service": "cloudlock-api",
+  "version": "1.0.0"
+}
+```
 
-    #### Test 5: Login User (ENDPOINT: GET /api/auth/me)
-        ##### 1. Click Authorize button located top right
-        ##### 2. Enter the token from Test 4.
-        ##### 3. Click Authorize and Click Close
-        ##### 4. Go to GET /api/auth/me
-        ##### 5. Click "Try it out"
-        ##### 6. Click Execute
+---
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "user_id": "123e4567-e89b-12d3-a456-426614174000",
-        "email": "alice@example.com",
-        "created_at": 1707953191,    <== example time
-        "last_login": 1707953250,    <== example time
-        "account_status": "active"
-        }
-        ```
-    #### Test 6: Save Vault (ENDPOINT: POST /api/vault/save)
-        ##### 1. Ensure you're authorized
-        ##### 2. Find POST /api/vault/save
-        ##### 3. Click "Try it out"
-        ##### 4. Copy and paste the following into Request body:
-        ```bash
-        {
-        "encrypted_vault": "dGVzdGVuY3J5cHRlZGRhdGE="
-        }
-        ```
-        ##### 5. Click "Execute"
+### Test 2: Register User
+**Endpoint:** `POST /api/auth/register`
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "status": "saved",
-        "timestamp": 1707953400    <== example time
-        }
-        ```
+1. Find POST /api/auth/register
+2. Click "Try it out"
+3. Copy and paste the following into Request body:
+```json
+{
+  "email": "alice@example.com",
+  "password": "AlicePass123!",
+  "auth_image_id": "img_001"
+}
+```
+4. Click "Execute"
 
-    #### Test 7: Retreive Vault (ENDPOINT: GET /api/vault/retrieve)
-        ##### 1. Ensure you're authorized
-        ##### 2. Find GET /api/vault/retrieve
-        ##### 3. Click "Try it out"
-        ##### 4. Click "Execute"
+**Expected Response (201 Created):**
+```json
+{
+  "message": "User registered successfully",
+  "user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "email": "alice@example.com",
+  "created_at": 1707953191,
+  "email_verification_required": false
+}
+```
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "encrypted_vault": "dGVzdGVuY3J5cHRlZGRhdGE=",
-        "last_modified": 1707953400   <== example time
-        }
-        ```
+---
 
+### Test 3: List All Users
+**Endpoint:** `GET /api/auth/admin/users`
 
-    #### Test 8: Wrong Password (ENDPOINT: POST /api/auth/login)
-        ##### 1. find POST /api/auth/login
-        ##### 2. Click "Try it out"
-        ##### 3. Copy and paste this into Request body:
-        ```bash
-        {
-        "email": "alice@example.com",
-        "password": "WrongPassword123!",
-        "device_fingerprint": "test_device"
-        }
-        ```
-        ##### 4. Click "Execute"
+1. Find GET /api/auth/admin/users
+2. Click "Try it out"
+3. Click "Execute"
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "detail": "Invalid email or password"
-        }
-        ```
+**Expected Response (200 OK):**
+```json
+{
+  "total_users": 1,
+  "users": [
+    {
+      "user_id": "123e4567-e89b-12d3-a456-426614174000",
+      "email": "alice@example.com",
+      "created_at": 1707953191,
+      "account_status": "active",
+      "last_login": null,
+      "failed_attempts": 0
+    }
+  ]
+}
+```
 
-    #### Test 9: Duplicate Email (ENDPOINT: POST /api/auth/register)
-        ##### 1. Find POST /api/auth/register
-        ##### 2. Click "Try it out"
-        ##### 3. Copy and paste this into Request body:
-        ```bash
-        {
-        "email": "alice@example.com",
-        "password": "AnotherPass123!",
-        "auth_image_id": "img_999"
-        }
-        ```
-        ##### 4. Click "Execute"
+---
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "detail": "User with this email already exists"
-        }
-        ```
+### Test 4: Login User
+**Endpoint:** `POST /api/auth/login`
 
-    #### Test 10: Logout (ENDPOINT: POST /api/auth/logout)
-        ##### 1. Ensure you are authorized
-        ##### 2. Find POST /api/auth/logout
-        ##### 3. Click "Try it out"
-        ##### 4. Click "Execute"
+1. Find POST /api/auth/login
+2. Click "Try it out"
+3. Copy and paste the following into Request body:
+```json
+{
+  "email": "alice@example.com",
+  "password": "AlicePass123!",
+  "device_fingerprint": "my_laptop_123"
+}
+```
+4. Click "Execute"
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "message": "Logged out successfully"
-        }
-        ```
+**Expected Response (200 OK):**
+```json
+{
+  "access_token": "token_abc123-def456-xyz789-ghijkl",
+  "refresh_token": null,
+  "user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "email": "alice@example.com",
+  "requires_mfa": false
+}
+```
 
-    #### Test 11: Logout (ENDPOINT: GET /api/auth/debug/database-info)
-        ##### 1. Find GET /api/auth/debug/database-info
-        ##### 2. Click "Try it out"
-        ##### 3. Click "Execute"
+**⚠️ IMPORTANT:** Save the `access_token` for the following tests!
 
-        Expected Response (200 OK)
-        ```bash
-        {
-        "total_users": 1,
-        "total_sessions": 0,
-        "total_vaults": 1,
-        "user_emails": [
-            "alice@example.com"
-        ],
-        "users_detail": [
-            {
-            "user_id": "123e4567-e89b-12d3-a456-426614174000",
-            "email": "alice@example.com",
-            "created_at": 1707953191,      <== example time
-            "account_status": "active",
-            "last_login": 1707953250,      <== example time
-            "failed_attempts": 1
-            }
-        ]
-        }
-        ```    
+---
+
+### Test 5: Get Current User Info
+**Endpoint:** `GET /api/auth/me`
+
+1. Click the **Authorize** button (top right)
+2. Enter the token from Test 4 (without "Bearer" prefix)
+3. Click "Authorize" and then "Close"
+4. Find GET /api/auth/me
+5. Click "Try it out"
+6. Click "Execute"
+
+**Expected Response (200 OK):**
+```json
+{
+  "user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "email": "alice@example.com",
+  "created_at": 1707953191,
+  "last_login": 1707953250,
+  "account_status": "active"
+}
+```
+
+---
+
+### Test 6: Save Encrypted Vault
+**Endpoint:** `POST /api/vault/save`
+
+**⚠️ Ensure you're authorized (see Test 5)**
+
+1. Find POST /api/vault/save
+2. Click "Try it out"
+3. Copy and paste the following into Request body:
+```json
+{
+  "encrypted_vault": "dGVzdGVuY3J5cHRlZGRhdGE="
+}
+```
+4. Click "Execute"
+
+**Expected Response (200 OK):**
+```json
+{
+  "status": "saved",
+  "timestamp": 1707953400
+}
+```
+
+---
+
+### Test 7: Retrieve Vault
+**Endpoint:** `GET /api/vault/retrieve`
+
+**⚠️ Ensure you're authorized (see Test 5)**
+
+1. Find GET /api/vault/retrieve
+2. Click "Try it out"
+3. Click "Execute"
+
+**Expected Response (200 OK):**
+```json
+{
+  "encrypted_vault": "dGVzdGVuY3J5cHRlZGRhdGE=",
+  "last_modified": 1707953400
+}
+```
+
+---
+
+### Test 8: Wrong Password (Error Case)
+**Endpoint:** `POST /api/auth/login`
+
+1. Find POST /api/auth/login
+2. Click "Try it out"
+3. Copy and paste the following into Request body:
+```json
+{
+  "email": "alice@example.com",
+  "password": "WrongPassword123!",
+  "device_fingerprint": "test_device"
+}
+```
+4. Click "Execute"
+
+**Expected Response (401 Unauthorized):**
+```json
+{
+  "detail": "Invalid email or password"
+}
+```
+
+---
+
+### Test 9: Duplicate Email (Error Case)
+**Endpoint:** `POST /api/auth/register`
+
+1. Find POST /api/auth/register
+2. Click "Try it out"
+3. Copy and paste the following into Request body:
+```json
+{
+  "email": "alice@example.com",
+  "password": "AnotherPass123!",
+  "auth_image_id": "img_999"
+}
+```
+4. Click "Execute"
+
+**Expected Response (409 Conflict):**
+```json
+{
+  "detail": "User with this email already exists"
+}
+```
+
+---
+
+### Test 10: Logout
+**Endpoint:** `POST /api/auth/logout`
+
+**⚠️ Ensure you're authorized (see Test 5)**
+
+1. Find POST /api/auth/logout
+2. Click "Try it out"
+3. Click "Execute"
+
+**Expected Response (200 OK):**
+```json
+{
+  "message": "Logged out successfully"
+}
+```
+
+---
+
+### Test 11: Database Debug Info
+**Endpoint:** `GET /api/auth/debug/database-info`
+
+1. Find GET /api/auth/debug/database-info
+2. Click "Try it out"
+3. Click "Execute"
+
+**Expected Response (200 OK):**
+```json
+{
+  "total_users": 1,
+  "total_sessions": 0,
+  "total_vaults": 1,
+  "user_emails": [
+    "alice@example.com"
+  ],
+  "users_detail": [
+    {
+      "user_id": "123e4567-e89b-12d3-a456-426614174000",
+      "email": "alice@example.com",
+      "created_at": 1707953191,
+      "account_status": "active",
+      "last_login": 1707953250,
+      "failed_attempts": 1
+    }
+  ]
+}
+```    
             
 
