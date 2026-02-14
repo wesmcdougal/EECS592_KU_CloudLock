@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     aws_region: str = "us-east-1"
     cognito_user_pool_id: Optional[str] = None
     cognito_client_id: Optional[str] = None
+    kms_key_id: Optional[str] = None
     
     # DynamoDB Tables
     users_table: str = "PasswordManager-Users-dev"

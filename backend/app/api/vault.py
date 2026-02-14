@@ -1,27 +1,27 @@
-# supports saving and retrieving an encrypted vault; it expects client-side encrypted data (good for zero-knowledge).
-from fastapi import APIRouter, HTTPException, status, Header
+# backend/app/api/vault.py
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models.schemas import SaveVaultRequest, SaveVaultResponse, VaultResponse
+from app.services.database import db
 import time
-from typing import Optional, Dict
 
 router = APIRouter()
+security = HTTPBearer()
 
-# In-memory storage for demo
-vaults_db: Dict[str, dict] = {}
-
-# Helper: Get user_id from token (simplified)
-def get_user_from_token(authorization: str) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
+@router.post("/save", response_model=SaveVaultResponse)
+async def save_vault(
+    request: SaveVaultRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Save encrypted vault for authenticated user
+    Requires: Authorization: Bearer <token>
+    """
+    # Extract token from credentials
+    token = credentials.credentials
     
-    token = authorization.replace("Bearer ", "")
-    
-    # Import from auth module
-    from app.api.auth import sessions_db
-    user_id = sessions_db.get(token)
+    # Get user from token
+    user_id = db.get_user_from_token(token)
     
     if not user_id:
         raise HTTPException(
@@ -29,39 +29,36 @@ def get_user_from_token(authorization: str) -> str:
             detail="Invalid or expired token"
         )
     
-    return user_id
-
-@router.post("/save", response_model=SaveVaultResponse)
-async def save_vault(
-    request: SaveVaultRequest,
-    authorization: Optional[str] = Header(None)
-):
-    """
-    Save encrypted vault for authenticated user
-    """
-    user_id = get_user_from_token(authorization)
-    
-    timestamp = int(time.time())
-    
     # Save vault
-    vaults_db[user_id] = {
-        "encrypted_vault": request.encrypted_vault,
-        "last_modified": timestamp
-    }
+    db.save_vault(user_id, request.encrypted_vault)
     
     return SaveVaultResponse(
         status="saved",
-        timestamp=timestamp
+        timestamp=int(time.time())
     )
 
 @router.get("/retrieve", response_model=VaultResponse)
-async def retrieve_vault(authorization: Optional[str] = Header(None)):
+async def retrieve_vault(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
     """
     Retrieve encrypted vault for authenticated user
+    Requires: Authorization: Bearer <token>
     """
-    user_id = get_user_from_token(authorization)
+    # Extract token
+    token = credentials.credentials
     
-    vault = vaults_db.get(user_id)
+    # Get user from token
+    user_id = db.get_user_from_token(token)
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token"
+        )
+    
+    # Get vault
+    vault = db.get_vault(user_id)
     
     if not vault:
         raise HTTPException(

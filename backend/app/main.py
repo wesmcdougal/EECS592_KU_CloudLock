@@ -35,7 +35,7 @@ app.include_router(vault.router, prefix="/api/vault", tags=["Vault"])
 async def health_check():
     return HealthResponse(
         status="healthy",
-        service="password-manager-api",
+        service="cloudlock-api",
         version="1.0.0"
     )
 

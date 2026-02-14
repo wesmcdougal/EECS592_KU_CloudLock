@@ -12,6 +12,8 @@ class RegisterRequest(BaseModel):
 class RegisterResponse(BaseModel):
     message: str
     user_id: str
+    email: str
+    created_at: int
     email_verification_required: bool
 
 class LoginRequest(BaseModel):
@@ -23,6 +25,7 @@ class LoginResponse(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None
     user_id: str
+    email: str
     requires_mfa: bool
     mfa_types: Optional[list] = None
 
@@ -45,3 +48,13 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     version: str
+
+class UserInDB(BaseModel):
+    user_id: str
+    email: EmailStr
+    password_hash: str
+    auth_image_id: Optional[str] = None
+    created_at: int
+    last_login: Optional[int] = None
+    account_status: str = "active"
+    failed_login_attempts: int = 0
