@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import SignupForm from "../components/SignupForm";
+import ActionButton from "../components/ActionButton";
 
 
 function SignupPage() {
@@ -11,10 +11,24 @@ function SignupPage() {
 
             <SignupForm />
 
-            <ul>
-                <li><Link to="/login">Login instead</Link></li>
-                <li><Link to="/">Return Home</Link></li>
-            </ul>
+            <div className="home-buttons">
+                <div className="container">
+                    <ActionButton
+                        id="signup-login-button"
+                        className="home-action-button"
+                        label="LOGIN"
+                        to="/login"
+                    />
+                </div>
+                <div className="container">
+                    <ActionButton
+                        id="signup-home-button"
+                        className="home-action-button"
+                        label="HOME"
+                        to="/"
+                    />
+                </div>
+            </div>
         </>
     );
 }

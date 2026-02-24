@@ -1,19 +1,33 @@
-import { Link } from "react-router-dom";
 import LoginForm from "../components/LoginForm";
+import ActionButton from "../components/ActionButton";
 
 function LoginPage() {
 
     return (
         <>
-            <h1>Login</h1>
+            <h1>LOGIN</h1>
             <p>Please enter your login credentials</p>
 
             <LoginForm />
 
-            <ul>
-                <li><Link to="/signup">Signup instead</Link></li>
-                <li><Link to="/">Return Home</Link></li>
-            </ul>
+            <div className="home-buttons">
+                <div className="container">
+                    <ActionButton
+                        id="login-signup-button"
+                        className="home-action-button"
+                        label="SIGNUP"
+                        to="/signup"
+                    />
+                </div>
+                <div className="container">
+                    <ActionButton
+                        id="login-home-button"
+                        className="home-action-button"
+                        label="HOME"
+                        to="/"
+                    />
+                </div>
+            </div>
         </>
     );
 }
