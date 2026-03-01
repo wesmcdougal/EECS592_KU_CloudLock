@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom';
 import eyeOpen from '../assets/eyeopen.png';
 import eyeClose from '../assets/eyeclose.png';
+import { deriveKey } from '../crypto/keyDerivation';
+import { encryptMasterKeyWithRecovery } from '../crypto/recovery';
 
 export default function SignUp() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: '', username: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState({ email: '', username: '', password: '', confirmPassword: '', recovery: '' });
   const [message, setMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitButtonState, setSubmitButtonState] = useState('');
   const timeoutsRef = useRef([]);
   const passwordsMatch = form.password === form.confirmPassword;
-  const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && passwordsMatch;
+  const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && form.recovery.trim() && passwordsMatch;
 
   useEffect(() => {
     return () => {
@@ -25,11 +27,11 @@ export default function SignUp() {
     timeoutsRef.current.push(timeoutId);
   }
 
- async function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
-    if (!form.email.trim() || !form.username.trim() || !form.password.trim() || !form.confirmPassword.trim()) {
-      setMessage('Please fill in all fields.');
+    if (!form.email.trim() || !form.username.trim() || !form.password.trim() || !form.confirmPassword.trim() || !form.recovery.trim()) {
+      setMessage('Please fill in all fields, including recovery info.');
       return;
     }
 
@@ -41,8 +43,17 @@ export default function SignUp() {
     setMessage('');
     setSubmitButtonState('onclic');
 
+    // --- Emergency Recovery Logic ---
+    // 1. Derive master key from password (simulate PBKDF2)
+    const salt = form.username; // For demo, use username as salt (should use random salt in production)
+    const masterKey = await deriveKey(form.password, salt);
+    // 2. Export masterKey to raw bytes
+    const masterKeyRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', masterKey));
+    // 3. Encrypt masterKeyRaw with recovery info
+    const encryptedRecovery = await encryptMasterKeyWithRecovery(masterKeyRaw, form.recovery, salt);
+    // TODO: Send encryptedRecovery to backend as part of registration
+
     // TEMPORARY: bypass authentication
-    // Redirect to login WITH state
     queueTimeout(() => {
       setSubmitButtonState('validate');
       navigate("/login", {
@@ -56,7 +67,7 @@ export default function SignUp() {
     queueTimeout(() => {
       setSubmitButtonState('');
     }, 3500);
-    }
+  }
 
 
   return (
@@ -122,6 +133,13 @@ export default function SignUp() {
           />
         </button>
       </div>
+
+      <input
+        type="text"
+        placeholder="Recovery Key or Security Answer"
+        value={form.recovery}
+        onChange={e => setForm({ ...form, recovery: e.target.value })}
+      />
 
       <button
         type="submit"
