@@ -1,10 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
+import { AuthContext } from "../context/AuthContext";
+import { saveVault, getVault } from "../api/vaultApi";
+import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
+import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
 
 
 function MainPage() {
+    const { masterKey, token } = useContext(AuthContext);
     const location = useLocation();
     const displayUsername = location.state?.username || "User";
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -12,6 +17,8 @@ function MainPage() {
     const [mfaModalStep, setMfaModalStep] = useState("mfa");
     const [selectedEntityIndex, setSelectedEntityIndex] = useState(null);
     const [entities, setEntities] = useState([]);
+    // For loading state
+    const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [formData, setFormData] = useState({
         name: "",
@@ -67,6 +74,7 @@ function MainPage() {
         setMfaModalStep("actions");
     }
 
+        const { logout } = useContext(AuthContext);
     function openUpdateForm() {
         if (selectedEntityIndex === null) {
             return;
@@ -134,13 +142,41 @@ function MainPage() {
 
     function handleAddEntity(event) {
         event.preventDefault();
-
         if (!formData.name || !formData.username || !formData.password) {
             return;
         }
-
         setEntities((previous) => [...previous, formData]);
         closeModal();
+    }
+
+    // Save vault to backend (encrypted)
+    async function handleSaveVault(updatedEntities) {
+        if (!masterKey || !token) return;
+        const envelope = await envelopeEncrypt(updatedEntities, masterKey);
+        await saveVault(token, envelope);
+    }
+
+    // Load vault from backend (decrypt)
+    async function handleLoadVault() {
+        if (!masterKey || !token) return;
+        setLoading(true);
+        try {
+            const res = await getVault(token);
+            if (res.ok) {
+                const envelope = await res.json();
+                if (envelope && envelope.encryptedData && envelope.encryptedDEK) {
+                    const data = await envelopeDecrypt(envelope, masterKey);
+                    setEntities(data);
+                } else {
+                    setEntities([]);
+                }
+            } else {
+                setEntities([]);
+            }
+        } catch (e) {
+            setEntities([]);
+        }
+        setLoading(false);
     }
 
     function clearStoredCredentials() {
@@ -148,11 +184,25 @@ function MainPage() {
         localStorage.removeItem("password");
     }
 
+    // Load vault on mount
     useEffect(() => {
-        return () => {
-            clearStoredCredentials();
-        };
-    }, []);
+        if (masterKey && token) {
+            handleLoadVault();
+        }
+        // eslint-disable-next-line
+    }, [masterKey, token]);
+
+    // Save vault whenever entities change (except initial load)
+    useEffect(() => {
+        if (!loading && masterKey && token) {
+            handleSaveVault(entities);
+        }
+        // eslint-disable-next-line
+    }, [entities]);
+
+    if (loading) {
+        return <div>Loading vault...</div>;
+    }
 
     return (
         <div className="main-page">
@@ -163,36 +213,34 @@ function MainPage() {
                     </ul>
                 </nav>
                 <h1 className="main-title">Welcome {displayUsername}</h1>
-                <div className="main-search-area">
-                    <input
-                        type="text"
-                        className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
-                        placeholder="Search entities"
-                        value={searchTerm}
-                        onChange={(event) => setSearchTerm(event.target.value)}
-                        aria-label="Search entities"
-                    />
-
-                    {query && (
-                        <section className="search-results-panel" aria-live="polite">
-                            <>
-                                {searchResults.length > 0 ? (
-                                    <ul className="search-results-list">
-                                        {searchResults.map((entity, index) => (
-                                            <li key={`${entity.name}-${entity.username}-result-${index}`}>
-                                                {entity.name} ({entity.username})
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <p className="search-results-empty">No matches found.</p>
-                                )}
-                            </>
-                        </section>
-                    )}
-                </div>
-            </header>
-
+            <div className="main-search-area">
+                <input
+                    type="text"
+                    className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
+                    placeholder="Search entities"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                    aria-label="Search entities"
+                />
+                {query && (
+                    <section className="search-results-section">
+                        <>
+                            {searchResults.length > 0 ? (
+                                <ul className="search-results-list">
+                                    {searchResults.map((entity, index) => (
+                                        <li key={`${entity.name}-${entity.username}-result-${index}`}>
+                                            {entity.name} ({entity.username})
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="search-results-empty">No matches found.</p>
+                            )}
+                        </>
+                    </section>
+                )}
+            </div>
+        </header>
             <div className="main-content">
                 {entities.length > 0 && (
                     <ul className="entity-list">
