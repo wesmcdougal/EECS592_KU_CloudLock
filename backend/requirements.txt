@@ -1,0 +1,18 @@
+# requirements.txt - Correct versions for Python 3.11
+fastapi==0.115.6
+mangum==0.21.0
+boto3==1.35.90
+pydantic==2.10.6
+pydantic-settings==2.7.1
+email-validator==2.1.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+python-multipart==0.0.20
+pycryptodome==3.21.0
+webauthn==2.3.0
+uvicorn[standard]==0.34.0
+pytest==8.3.4
+httpx==0.28.1
+pytest-asyncio==0.25.2
+python-dotenv==1.0.1
