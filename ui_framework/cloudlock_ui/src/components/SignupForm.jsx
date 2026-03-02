@@ -4,6 +4,7 @@ import eyeOpen from '../assets/eyeopen.png';
 import eyeClose from '../assets/eyeclose.png';
 import { deriveKey } from '../crypto/keyDerivation';
 import { encryptMasterKeyWithRecovery } from '../crypto/recovery';
+import { generateStrongPassword } from '../crypto/passwordGenerator';
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -15,6 +16,23 @@ export default function SignUp() {
   const timeoutsRef = useRef([]);
   const passwordsMatch = form.password === form.confirmPassword;
   const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && form.recovery.trim() && passwordsMatch;
+  const pwGen = generateStrongPassword();
+
+  const [generatedPassword, setGeneratedPassword] = useState('');
+
+  function handleGeneratePassword() {
+    const pwGen = generateStrongPassword(14);
+    setGeneratedPassword(pwGen);
+
+    // Auto-fills password fields with generated password.
+    setForm(prev => ({
+      ...prev,
+      password: pwGen,
+      confirmPassword: pwGen,
+    }));
+
+    setMessage('');
+  }
 
   useEffect(() => {
     return () => {
@@ -132,6 +150,16 @@ export default function SignUp() {
             className="password-toggle-icon"
           />
         </button>
+      </div>
+
+      <div>
+      <button
+        type="button"
+        className="action-button"
+        onClick={handleGeneratePassword}
+      >
+        GENERATE?
+      </button>
       </div>
 
       <input

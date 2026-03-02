@@ -2,7 +2,8 @@
 // Derives a recovery key from user input and encrypts the master key
 
 import { deriveKey } from './keyDerivation';
-import { encryptData, decryptData } from './encrypt';
+import { encryptData } from './encrypt.js';
+import { decryptData } from './decrypt.js';
 
 // Encrypt the master key with a recovery key derived from recovery info
 export async function encryptMasterKeyWithRecovery(masterKeyRaw, recoveryInfo, salt) {
