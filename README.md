@@ -1,72 +1,24 @@
-# CloudLock
+# React + Vite
 
-<p align="center">
-  <img src="assets/CloudLock_logo.png" width="800">
-</p>
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-## Overview
+Currently, two official plugins are available:
 
-CloudLock is a secure cloud-based password manager built with React, Python, SQL, and AWS. It enforces a zero-knowledge architecture, ensuring that all encryption and decryption occur client-side. The server never has access to passwords or master keys.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-This project demonstrates secure system design principles, client-side cryptography, and modern cloud deployment practices.
+## React Compiler
 
----
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## 🚀 Features
+## Expanding the ESLint configuration
 
-- 🔐 Zero-knowledge encryption (client-side cryptography)
-- 🔑 Secure password generation
-- 🧬 Biometric multi-factor authentication (WebAuthn)
-- 📊 Audit logging and suspicious activity detection
-- 🖥️ Device-based login recognition
-- 🚫 Account lockout protection
-- ☁️ AWS cloud deployment
-- 🛡️ Injection-resistant authentication flows
-- Physical key password integration
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
 
----
-
-## 🏗️ Architecture
-
-**Frontend**
-- React
-- Client-side encryption
-- WebAuthn API integration
-
-**Backend**
-- Python (Flask / FastAPI)
-- RESTful API
-- Secure authentication handling
-
-**Database**
-- SQL database storing encrypted credential blobs
-
-**Cloud Infrastructure**
-- AWS (API Gateway, Lambda, optional RDS)
-
----
-
-## 🔒 Security Model
-
-VaultZero follows a zero-knowledge security model:
-- All sensitive data is encrypted before transmission.
-- The backend stores only encrypted data.
-- The server cannot decrypt user credentials.
-
-This ensures confidentiality even in the event of server compromise.
-
-## How to run
-
-**Backend**
-- Ensure Python 3.11 is used along with a virtual environment 
-    (python -m venv .venv)
-    ..venv\Scripts\Activate.ps1
-- Install dependencies (within backend directory)
-    - pip install --upgrade pip
-    - pip install -r requirements.txt
-- From backend run locally (currently in development)
-    - uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-    - Open API docs: http://localhost:8000/docs
-    - Health: http://localhost:8000/health
-    - Auth base: POST http://localhost:8000/api/auth/register
-    - Vault base: POST http://localhost:8000/api/vault/save
+## Running the Frontend
+```
+Be in location ui_framework/cloudlock_ui
+npm install
+npm run dev
+Access http://localhost:5173 on browser of choice
+```
