@@ -177,6 +177,38 @@ button:disabled {
   object-fit: cover;
 }
 
+.password-strength-text {
+  margin-top: 2px;
+  margin-bottom: 1px;
+  font-size: 0.9rem;
+}
+
+.password-strength-warning {
+  font-size: 0.6rem;
+  margin-top: 0.5px;
+  margin-bottom: 4px;
+}
+
+.strength-weak {
+  color: #ff4d4d;
+}
+
+.strength-fair {
+  color: #ffa500;
+}
+
+.strength-strong {
+  color: #4da6ff;
+}
+
+.strength-verystrong {
+  color: #2ecc71;
+}
+
+.generate-button-container {
+  margin-bottom: 4px;
+}
+
 .error-message {
   color: #ff6b6b;
   margin: 0;
