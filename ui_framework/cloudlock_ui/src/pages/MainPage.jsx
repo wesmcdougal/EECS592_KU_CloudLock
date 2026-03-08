@@ -17,8 +17,8 @@ function MainPage() {
     const [mfaModalStep, setMfaModalStep] = useState("mfa");
     const [selectedEntityIndex, setSelectedEntityIndex] = useState(null);
     const [entities, setEntities] = useState([]);
-    // For loading state
-    const [loading, setLoading] = useState(true);
+    // Start in non-loading mode; only load when auth context is available.
+    const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [formData, setFormData] = useState({
         name: "",
