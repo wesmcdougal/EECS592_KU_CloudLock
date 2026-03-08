@@ -5,6 +5,7 @@ import eyeClose from '../assets/eyeclose.png';
 import { deriveKey } from '../crypto/keyDerivation';
 import { encryptMasterKeyWithRecovery } from '../crypto/recovery';
 import { generateStrongPassword } from '../crypto/passwordGenerator';
+import { getPasswordStrength } from '../crypto/passwordStrength';
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -15,9 +16,8 @@ export default function SignUp() {
   const [submitButtonState, setSubmitButtonState] = useState('');
   const timeoutsRef = useRef([]);
   const passwordsMatch = form.password === form.confirmPassword;
-  const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && form.recovery.trim() && passwordsMatch;
-  const pwGen = generateStrongPassword();
-
+  const passwordStrength = getPasswordStrength(form.password);
+  const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && form.recovery.trim() && passwordsMatch && passwordStrength.label === 'Very Strong';
   const [generatedPassword, setGeneratedPassword] = useState('');
 
   function handleGeneratePassword() {
@@ -152,7 +152,24 @@ export default function SignUp() {
         </button>
       </div>
 
-      <div>
+      {form.password && (
+        <>
+          <p className="password-strength-text">
+            Password strength: 
+            <span className={`strength-${passwordStrength.label.replace(/\s+/g, '').toLowerCase()}`}>
+              {" "}{passwordStrength.label}
+            </span>
+          </p>
+
+          {passwordStrength.label !== 'Very Strong' && (
+            <p className="password-strength-warning">
+              Password must be <span className="strength-verystrong">Very Strong</span> to sign up. Try upper, lower, numbers, symbols, and avoid dictionary words.
+            </p>
+          )}
+        </>
+      )}
+
+      <div className="generate-button-container">
       <button
         type="button"
         className="action-button"
