@@ -9,6 +9,9 @@ import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
 
 
 function MainPage() {
+        const [showSpinner, setShowSpinner] = useState(false);
+        const [retryLoad, setRetryLoad] = useState(false);
+        const [retrySave, setRetrySave] = useState(false);
     const { masterKey, token } = useContext(AuthContext);
     const location = useLocation();
     const displayUsername = location.state?.username || "User";
@@ -19,6 +22,7 @@ function MainPage() {
     const [entities, setEntities] = useState([]);
     // For loading state
     const [loading, setLoading] = useState(true);
+    const [errorMessage, setErrorMessage] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
     const [formData, setFormData] = useState({
         name: "",
@@ -151,30 +155,89 @@ function MainPage() {
 
     // Save vault to backend (encrypted)
     async function handleSaveVault(updatedEntities) {
-        if (!masterKey || !token) return;
-        const envelope = await envelopeEncrypt(updatedEntities, masterKey);
-        await saveVault(token, envelope);
+        if (!masterKey) return;
+        setShowSpinner(true);
+        try {
+            const envelope = await envelopeEncrypt(updatedEntities, masterKey);
+            const response = await saveVault(envelope);
+            setShowSpinner(false);
+            if (response && response.status && [401,403,409,500,'timeout','error'].includes(response.status)) {
+                let msg = "";
+                switch(response.status) {
+                    case 401:
+                        msg = "Session expired. Please log in again."; break;
+                    case 403:
+                        msg = "Access denied. You do not have permission."; break;
+                    case 409:
+                        msg = "Conflict error. Please retry."; break;
+                    case 500:
+                        msg = "Server error. Please try again later."; break;
+                    case 'timeout':
+                        msg = "Request timed out. Please retry."; break;
+                    case 'error':
+                        msg = response.error || "Unknown error."; break;
+                    default:
+                        msg = "Unknown error.";
+                }
+                setErrorMessage(msg);
+                setRetrySave(true);
+            } else {
+                setErrorMessage("");
+                setRetrySave(false);
+            }
+        } catch (e) {
+            setShowSpinner(false);
+            setErrorMessage("Vault save failed: " + (e?.message || e));
+            setRetrySave(true);
+            console.error('Vault save failed:', e);
+        }
     }
 
     // Load vault from backend (decrypt)
     async function handleLoadVault() {
-        if (!masterKey || !token) return;
+        if (!masterKey) return;
         setLoading(true);
+        setShowSpinner(true);
         try {
-            const res = await getVault(token);
-            if (res.ok) {
-                const envelope = await res.json();
-                if (envelope && envelope.encryptedData && envelope.encryptedDEK) {
-                    const data = await envelopeDecrypt(envelope, masterKey);
-                    setEntities(data);
-                } else {
-                    setEntities([]);
+            const envelope = await getVault();
+            setShowSpinner(false);
+            if (envelope && envelope.status && [401,403,409,500,'timeout','error'].includes(envelope.status)) {
+                let msg = "";
+                switch(envelope.status) {
+                    case 401:
+                        msg = "Session expired. Please log in again."; break;
+                    case 403:
+                        msg = "Access denied. You do not have permission."; break;
+                    case 409:
+                        msg = "Conflict error. Please retry."; break;
+                    case 500:
+                        msg = "Server error. Please try again later."; break;
+                    case 'timeout':
+                        msg = "Request timed out. Please retry."; break;
+                    case 'error':
+                        msg = envelope.error || "Unknown error."; break;
+                    default:
+                        msg = "Unknown error.";
                 }
+                setErrorMessage(msg);
+                setEntities([]);
+                setRetryLoad(true);
+            } else if (envelope && envelope.encryptedData && envelope.encryptedDEK) {
+                const data = await envelopeDecrypt(envelope, masterKey);
+                setEntities(data);
+                setErrorMessage("");
+                setRetryLoad(false);
             } else {
                 setEntities([]);
+                setErrorMessage("");
+                setRetryLoad(false);
             }
         } catch (e) {
+            setShowSpinner(false);
             setEntities([]);
+            setErrorMessage("Vault load failed: " + (e?.message || e));
+            setRetryLoad(true);
+            console.error('Vault load failed:', e);
         }
         setLoading(false);
     }
@@ -186,7 +249,7 @@ function MainPage() {
 
     // Load vault on mount
     useEffect(() => {
-        if (masterKey && token) {
+        if (masterKey) {
             handleLoadVault();
         }
         // eslint-disable-next-line
@@ -194,14 +257,19 @@ function MainPage() {
 
     // Save vault whenever entities change (except initial load)
     useEffect(() => {
-        if (!loading && masterKey && token) {
+        if (!loading && masterKey) {
             handleSaveVault(entities);
         }
         // eslint-disable-next-line
     }, [entities]);
 
-    if (loading) {
-        return <div>Loading vault...</div>;
+    if (loading || showSpinner) {
+        return (
+            <div style={{ textAlign: 'center', marginTop: 40 }}>
+                <div className="spinner" style={{ margin: '20px auto', width: 40, height: 40, border: '4px solid #ccc', borderTop: '4px solid #333', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                <div>Loading vault...</div>
+            </div>
+        );
     }
 
     return (
@@ -213,18 +281,27 @@ function MainPage() {
                     </ul>
                 </nav>
                 <h1 className="main-title">Welcome {displayUsername}</h1>
-            <div className="main-search-area">
-                <input
-                    type="text"
-                    className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
-                    placeholder="Search entities"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    aria-label="Search entities"
-                />
-                {query && (
-                    <section className="search-results-section">
-                        <>
+                {errorMessage && (
+                    <div className="error-message" style={{ color: 'red', margin: '8px 0' }}>{errorMessage}
+                        {retryLoad && (
+                            <button style={{ marginLeft: 8 }} onClick={() => { setRetryLoad(false); handleLoadVault(); }}>Retry Load</button>
+                        )}
+                        {retrySave && (
+                            <button style={{ marginLeft: 8 }} onClick={() => { setRetrySave(false); handleSaveVault(entities); }}>Retry Save</button>
+                        )}
+                    </div>
+                )}
+                <div className="main-search-area">
+                    <input
+                        type="text"
+                        className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
+                        placeholder="Search entities"
+                        value={searchTerm}
+                        onChange={(event) => setSearchTerm(event.target.value)}
+                        aria-label="Search entities"
+                    />
+                    {query && (
+                        <section className="search-results-section">
                             {searchResults.length > 0 ? (
                                 <ul className="search-results-list">
                                     {searchResults.map((entity, index) => (
@@ -236,11 +313,10 @@ function MainPage() {
                             ) : (
                                 <p className="search-results-empty">No matches found.</p>
                             )}
-                        </>
-                    </section>
-                )}
-            </div>
-        </header>
+                        </section>
+                    )}
+                </div>
+            </header>
             <div className="main-content">
                 {entities.length > 0 && (
                     <ul className="entity-list">
@@ -253,57 +329,69 @@ function MainPage() {
                                     aria-label={`${entity.name} (${entity.username})`}
                                     title={`Username: ${entity.username}`}
                                     onClick={() => openMfaModal(index)}
-                                />
+                                >{entity.name}</button>
                             </li>
                         ))}
                     </ul>
                 )}
-
                 <button
                     id="add-entity-button"
                     className="action-button main-add-button"
-                    data-label="+"
-                    aria-label="Add entity"
-                    type="button"
+                    data-label="ADD"
+                    aria-label="Add Entity"
                     onClick={openModal}
-                />
+                >Add Entity</button>
             </div>
 
             {isModalOpen && (
                 <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="Add entity">
-                    <form className="entity-modal" onSubmit={handleAddEntity}>
-                        <h2>Add Entity</h2>
-
-                        <input
-                            type="text"
-                            name="name"
-                            placeholder="Name"
-                            value={formData.name}
-                            onChange={handleInputChange}
-                            required
-                        />
-                        <input
-                            type="text"
-                            name="username"
-                            placeholder="Username"
-                            value={formData.username}
-                            onChange={handleInputChange}
-                            required
-                        />
-                        <input
-                            type="password"
-                            name="password"
-                            placeholder="Password"
-                            value={formData.password}
-                            onChange={handleInputChange}
-                            required
-                        />
-
-                        <div className="entity-modal-actions">
-                            <button type="submit" disabled={!isAddFormValid} className="action-button entity-modal-button" data-label="ADD" aria-label="Add" />
-                            <button type="button" className="action-button entity-modal-button" data-label="CANCEL" aria-label="Cancel" onClick={closeModal} />
-                        </div>
-                    </form>
+                    <div className="entity-modal">
+                        <form onSubmit={handleAddEntity}>
+                            <h2>Add Entity</h2>
+                            <input
+                                type="text"
+                                name="name"
+                                placeholder="Name"
+                                value={formData.name}
+                                onChange={handleInputChange}
+                                required
+                            />
+                            <input
+                                type="text"
+                                name="username"
+                                placeholder="Username"
+                                value={formData.username}
+                                onChange={handleInputChange}
+                                required
+                            />
+                            <div className="password-field">
+                                <input
+                                    type="password"
+                                    name="password"
+                                    placeholder="Password"
+                                    value={formData.password}
+                                    onChange={handleInputChange}
+                                    required
+                                />
+                            </div>
+                            <div className="entity-modal-actions">
+                                <button
+                                    type="submit"
+                                    className="action-button entity-modal-button"
+                                    data-label="ADD"
+                                    aria-label="Add"
+                                    disabled={!isAddFormValid}
+                                >Add</button>
+                                <button
+                                    type="button"
+                                    className="action-button entity-modal-button"
+                                    data-label="CANCEL"
+                                    aria-label="Cancel"
+                                    onClick={closeModal}
+                                >Cancel</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
 
@@ -320,7 +408,7 @@ function MainPage() {
                                         data-label="OK"
                                         aria-label="OK"
                                         onClick={showMfaActions}
-                                    />
+                                    >OK</button>
                                 </div>
                             </>
                         )}
@@ -335,14 +423,14 @@ function MainPage() {
                                         data-label="UPDATE"
                                         aria-label="Update"
                                         onClick={openUpdateForm}
-                                    />
+                                    >Update</button>
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="DELETE"
                                         aria-label="Delete"
                                         onClick={openDeleteConfirmation}
-                                    />
+                                    >Delete</button>
                                 </div>
                             </>
                         )}
@@ -358,14 +446,14 @@ function MainPage() {
                                         data-label="DELETE"
                                         aria-label="Confirm Delete"
                                         onClick={handleDeleteEntity}
-                                    />
+                                    >Delete</button>
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="CANCEL"
                                         aria-label="Cancel"
                                         onClick={closeMfaModal}
-                                    />
+                                    >Cancel</button>
                                 </div>
                             </>
                         )}
@@ -417,14 +505,14 @@ function MainPage() {
                                         className="action-button entity-modal-button"
                                         data-label="UPDATE"
                                         aria-label="Update"
-                                    />
+                                    >Update</button>
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="CANCEL"
                                         aria-label="Cancel"
                                         onClick={closeMfaModal}
-                                    />
+                                    >Cancel</button>
                                 </div>
                             </form>
                         )}
@@ -432,7 +520,6 @@ function MainPage() {
                 </div>
             )}
         </div>
-        
     );
 }
 

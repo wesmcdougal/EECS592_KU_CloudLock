@@ -1,18 +1,10 @@
-export async function saveVault(token, encryptedVault) {
-  return fetch("/api/vault", {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(encryptedVault),
-  });
+import { put, get } from './apiService';
+
+export async function saveVault(encryptedVault) {
+  // Token is attached automatically by apiService
+  return put('/vault', encryptedVault);
 }
 
-export async function getVault(token) {
-  return fetch("/api/vault", {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+export async function getVault() {
+  return get('/vault');
 }
