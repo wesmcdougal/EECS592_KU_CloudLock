@@ -61,30 +61,43 @@ export default function SignUp() {
     setMessage('');
     setSubmitButtonState('onclic');
 
-    // --- Emergency Recovery Logic ---
-    // 1. Derive master key from password (simulate PBKDF2)
-    const salt = form.username; // For demo, use username as salt (should use random salt in production)
-    const masterKey = await deriveKey(form.password, salt);
-    // 2. Export masterKey to raw bytes
-    const masterKeyRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', masterKey));
-    // 3. Encrypt masterKeyRaw with recovery info
-    const encryptedRecovery = await encryptMasterKeyWithRecovery(masterKeyRaw, form.recovery, salt);
-    // TODO: Send encryptedRecovery to backend as part of registration
+    try {
+      // Emergency Recovery Logic
+      // 1. Derive master key from password (simulate PBKDF2)
+      const salt = form.username; // For demo, use username as salt (should use random salt in production)
+      const masterKey = await deriveKey(form.password, salt);
+      // 2. Export masterKey to raw bytes
+      const masterKeyRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', masterKey));
+      // 3. Encrypt masterKeyRaw with recovery info
+      const encryptedRecovery = await encryptMasterKeyWithRecovery(masterKeyRaw, form.recovery, salt);
 
-    // TEMPORARY: bypass authentication
-    queueTimeout(() => {
-      setSubmitButtonState('validate');
-      navigate("/login", {
-        state: {
-          signupSuccess: true,
-          username: form.username
-        }
-      });
-    }, 2250);
+      // 4. Derive authVerifier for zero-knowledge
+      const authVerifier = await deriveKey(form.password, salt);
+      const authVerifierRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', authVerifier));
 
-    queueTimeout(() => {
+      // 5. Encrypt initial vault (empty or with recovery info)
+      const encryptedVaultData = encryptedRecovery; // For demo, use recovery-encrypted master key
+
+      // 6. Call signup API
+      const { signup } = await import('../api/authApi');
+      const response = await signup(form.username.trim(), authVerifierRaw, salt, encryptedVaultData);
+
+      if (response?.token) {
+        setSubmitButtonState('validate');
+        navigate("/login", {
+          state: {
+            signupSuccess: true,
+            username: form.username
+          }
+        });
+      } else {
+        setMessage(response?.error || "Signup failed. Please try again.");
+        setSubmitButtonState('');
+      }
+    } catch (err) {
+      setMessage("Signup error: " + (err?.message || err));
       setSubmitButtonState('');
-    }, 3500);
+    }
   }
 
 

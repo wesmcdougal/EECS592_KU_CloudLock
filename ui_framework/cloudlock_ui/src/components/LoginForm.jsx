@@ -42,17 +42,34 @@ export default function Login() {
     setMessage("");
     setSubmitButtonState("onclic");
 
-    // TEMPORARY: bypass authentication
-    queueTimeout(() => {
-      localStorage.removeItem("username");
-      localStorage.removeItem("password");
-      setSubmitButtonState("validate");
-      navigate("/main", { state: { username: username.trim() } });
-    }, 2250);
+    try {
+      // --- Zero-knowledge: get salt, derive verifier, call login ---
+      // 1. Get salt from backend
+      const saltResp = await import('../api/authApi').then(mod => mod.getSalt(username.trim()));
+      const saltData = await saltResp;
+      const salt = saltData?.salt || username.trim(); // fallback
 
-    queueTimeout(() => {
+      // 2. Derive verifier (simulate SRP or PBKDF2)
+      const { deriveKey } = await import('../crypto/keyDerivation');
+      const authVerifier = await deriveKey(password, salt);
+      // Export verifier to raw bytes (simulate)
+      const authVerifierRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', authVerifier));
+
+      // 3. Call login API
+      const { login } = await import('../api/authApi');
+      const response = await login(username.trim(), authVerifierRaw);
+
+      if (response?.token) {
+        setSubmitButtonState("validate");
+        navigate("/main", { state: { username: username.trim() } });
+      } else {
+        setMessage(response?.error || "Login failed. Please check your credentials.");
+        setSubmitButtonState("");
+      }
+    } catch (err) {
+      setMessage("Login error: " + (err?.message || err));
       setSubmitButtonState("");
-    }, 3500);
+    }
   }
 
 
