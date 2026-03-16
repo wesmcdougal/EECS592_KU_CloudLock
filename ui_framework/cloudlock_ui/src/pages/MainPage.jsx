@@ -6,7 +6,8 @@ import { AuthContext } from "../context/AuthContext";
 import { saveVault, getVault } from "../api/vaultApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
-
+import { generateStrongPassword } from "../crypto/passwordGenerator";
+import { getPasswordStrength } from "../crypto/passwordStrength";
 
 function MainPage() {
     const { masterKey, token } = useContext(AuthContext);
@@ -17,7 +18,6 @@ function MainPage() {
     const [mfaModalStep, setMfaModalStep] = useState("mfa");
     const [selectedEntityIndex, setSelectedEntityIndex] = useState(null);
     const [entities, setEntities] = useState([]);
-    // Start in non-loading mode; only load when auth context is available.
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [formData, setFormData] = useState({
@@ -30,6 +30,7 @@ function MainPage() {
         username: "",
         password: "",
     });
+    const [showAddPassword, setShowAddPassword] = useState(false);
     const [showUpdatePassword, setShowUpdatePassword] = useState(false);
 
     const query = searchTerm.trim().toLowerCase();
@@ -37,12 +38,17 @@ function MainPage() {
         formData.name.trim() &&
         formData.username.trim() &&
         formData.password.trim();
+
+    const addPasswordStrength = getPasswordStrength(formData.password);
+    const updatePasswordStrength = getPasswordStrength(updateFormData.password);
+
     const searchResults = query
         ? entities.filter((entity) => (
             entity.name.toLowerCase().includes(query) ||
             entity.username.toLowerCase().includes(query)
         ))
         : [];
+
     const selectedEntityName = selectedEntityIndex !== null
         ? entities[selectedEntityIndex]?.name || "this entity"
         : "this entity";
@@ -54,6 +60,7 @@ function MainPage() {
     function closeModal() {
         setIsModalOpen(false);
         setFormData({ name: "", username: "", password: "" });
+        setShowAddPassword(false);
     }
 
     function openMfaModal(index) {
@@ -74,7 +81,8 @@ function MainPage() {
         setMfaModalStep("actions");
     }
 
-        const { logout } = useContext(AuthContext);
+    const { logout } = useContext(AuthContext);
+
     function openUpdateForm() {
         if (selectedEntityIndex === null) {
             return;
@@ -149,14 +157,28 @@ function MainPage() {
         closeModal();
     }
 
-    // Save vault to backend (encrypted)
+    function handleGenerateAddPassword() {
+        const password = generateStrongPassword(14);
+        setFormData((previous) => ({
+            ...previous,
+            password,
+        }));
+    }
+
+    function handleGenerateUpdatePassword() {
+        const password = generateStrongPassword(14);
+        setUpdateFormData((previous) => ({
+            ...previous,
+            password,
+        }));
+    }
+
     async function handleSaveVault(updatedEntities) {
         if (!masterKey || !token) return;
         const envelope = await envelopeEncrypt(updatedEntities, masterKey);
         await saveVault(token, envelope);
     }
 
-    // Load vault from backend (decrypt)
     async function handleLoadVault() {
         if (!masterKey || !token) return;
         setLoading(true);
@@ -184,7 +206,6 @@ function MainPage() {
         localStorage.removeItem("password");
     }
 
-    // Load vault on mount
     useEffect(() => {
         if (masterKey && token) {
             handleLoadVault();
@@ -192,7 +213,6 @@ function MainPage() {
         // eslint-disable-next-line
     }, [masterKey, token]);
 
-    // Save vault whenever entities change (except initial load)
     useEffect(() => {
         if (!loading && masterKey && token) {
             handleSaveVault(entities);
@@ -213,34 +233,35 @@ function MainPage() {
                     </ul>
                 </nav>
                 <h1 className="main-title">Welcome {displayUsername}</h1>
-            <div className="main-search-area">
-                <input
-                    type="text"
-                    className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
-                    placeholder="Search entities"
-                    value={searchTerm}
-                    onChange={(event) => setSearchTerm(event.target.value)}
-                    aria-label="Search entities"
-                />
-                {query && (
-                    <section className="search-results-section">
-                        <>
-                            {searchResults.length > 0 ? (
-                                <ul className="search-results-list">
-                                    {searchResults.map((entity, index) => (
-                                        <li key={`${entity.name}-${entity.username}-result-${index}`}>
-                                            {entity.name} ({entity.username})
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="search-results-empty">No matches found.</p>
-                            )}
-                        </>
-                    </section>
-                )}
-            </div>
-        </header>
+                <div className="main-search-area">
+                    <input
+                        type="text"
+                        className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
+                        placeholder="Search entities"
+                        value={searchTerm}
+                        onChange={(event) => setSearchTerm(event.target.value)}
+                        aria-label="Search entities"
+                    />
+                    {query && (
+                        <section className="search-results-section">
+                            <>
+                                {searchResults.length > 0 ? (
+                                    <ul className="search-results-list">
+                                        {searchResults.map((entity, index) => (
+                                            <li key={`${entity.name}-${entity.username}-result-${index}`}>
+                                                {entity.name} ({entity.username})
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="search-results-empty">No matches found.</p>
+                                )}
+                            </>
+                        </section>
+                    )}
+                </div>
+            </header>
+
             <div className="main-content">
                 {entities.length > 0 && (
                     <ul className="entity-list">
@@ -290,14 +311,48 @@ function MainPage() {
                             onChange={handleInputChange}
                             required
                         />
-                        <input
-                            type="password"
-                            name="password"
-                            placeholder="Password"
-                            value={formData.password}
-                            onChange={handleInputChange}
-                            required
-                        />
+
+                        <div className="password-field">
+                            <input
+                                type={showAddPassword ? "text" : "password"}
+                                name="password"
+                                placeholder="Password"
+                                value={formData.password}
+                                onChange={handleInputChange}
+                                required
+                            />
+                            <button
+                                type="button"
+                                className="password-toggle"
+                                onClick={() => setShowAddPassword((previous) => !previous)}
+                                aria-label={showAddPassword ? "Hide password" : "Show password"}
+                            >
+                                <img
+                                    src={showAddPassword ? eyeClose : eyeOpen}
+                                    alt={showAddPassword ? "Hide password" : "Show password"}
+                                    className="password-toggle-icon"
+                                />
+                            </button>
+                        </div>
+
+                        {formData.password && (
+                            <p className="password-strength-text">
+                                Password strength:
+                                <span className={`strength-${addPasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}>
+                                    {" "}{addPasswordStrength.label}
+                                </span>
+                            </p>
+                        )}
+
+                        <div className="generate-button-container">
+                            <button
+                                type="button"
+                                className="action-button"
+                                onClick={handleGenerateAddPassword}
+                            >
+                                GENERATE?
+                            </button>
+                        </div>
 
                         <div className="entity-modal-actions">
                             <button type="submit" disabled={!isAddFormValid} className="action-button entity-modal-button" data-label="ADD" aria-label="Add" />
@@ -389,6 +444,7 @@ function MainPage() {
                                     onChange={handleUpdateInputChange}
                                     required
                                 />
+
                                 <div className="password-field">
                                     <input
                                         type={showUpdatePassword ? "text" : "password"}
@@ -411,6 +467,26 @@ function MainPage() {
                                         />
                                     </button>
                                 </div>
+
+                                {updateFormData.password && (
+                                    <p className="password-strength-text">
+                                        Password strength:
+                                        <span className={`strength-${updatePasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}>
+                                            {" "}{updatePasswordStrength.label}
+                                        </span>
+                                    </p>
+                                )}
+
+                                <div className="generate-button-container">
+                                    <button
+                                        type="button"
+                                        className="action-button"
+                                        onClick={handleGenerateUpdatePassword}
+                                    >
+                                        GENERATE?
+                                    </button>
+                                </div>
+
                                 <div className="entity-modal-actions">
                                     <button
                                         type="submit"
@@ -432,7 +508,6 @@ function MainPage() {
                 </div>
             )}
         </div>
-        
     );
 }
 
