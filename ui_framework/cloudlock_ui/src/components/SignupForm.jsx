@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import eyeOpen from '../assets/eyeopen.png';
 import eyeClose from '../assets/eyeclose.png';
-import { deriveKey } from '../crypto/keyDerivation';
-import { encryptMasterKeyWithRecovery } from '../crypto/recovery';
+import { signup } from '../api/authApi';
 import { generateStrongPassword } from '../crypto/passwordGenerator';
 import { getPasswordStrength } from '../crypto/passwordStrength';
 
@@ -62,32 +61,19 @@ export default function SignUp() {
     setSubmitButtonState('onclic');
 
     try {
-      // Emergency Recovery Logic
-      // 1. Derive master key from password (simulate PBKDF2)
-      const salt = form.username; // For demo, use username as salt (should use random salt in production)
-      const masterKey = await deriveKey(form.password, salt);
-      // 2. Export masterKey to raw bytes
-      const masterKeyRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', masterKey));
-      // 3. Encrypt masterKeyRaw with recovery info
-      const encryptedRecovery = await encryptMasterKeyWithRecovery(masterKeyRaw, form.recovery, salt);
+      const response = await signup({
+        email: form.email.trim(),
+        password: form.password,
+        username: form.username.trim(),
+      });
 
-      // 4. Derive authVerifier for zero-knowledge
-      const authVerifier = await deriveKey(form.password, salt);
-      const authVerifierRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', authVerifier));
-
-      // 5. Encrypt initial vault (empty or with recovery info)
-      const encryptedVaultData = encryptedRecovery; // For demo, use recovery-encrypted master key
-
-      // 6. Call signup API
-      const { signup } = await import('../api/authApi');
-      const response = await signup(form.username.trim(), authVerifierRaw, salt, encryptedVaultData);
-
-      if (response?.token) {
+      if (response?.user_id) {
         setSubmitButtonState('validate');
         navigate("/login", {
           state: {
             signupSuccess: true,
-            username: form.username
+            email: form.email.trim(),
+            username: form.username.trim(),
           }
         });
       } else {

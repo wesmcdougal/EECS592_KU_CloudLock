@@ -1,13 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
+import { login } from "../api/authApi";
+import { deriveKey } from "../crypto/keyDerivation";
+import { AuthContext } from "../context/AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { setMasterKey, setToken } = useContext(AuthContext);
 
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState(location.state?.email || "");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -18,7 +22,7 @@ export default function Login() {
     location.state?.signupSuccess
     ? "Account created successfully. Please log in."
     : "";
-  const isFormValid = username.trim() && password.trim();
+  const isFormValid = email.trim() && password.trim();
 
   useEffect(() => {
     return () => {
@@ -34,8 +38,8 @@ export default function Login() {
   async function handleLogin(event) {
     event.preventDefault();
 
-    if (!username.trim() || !password.trim()) {
-      setMessage("Please fill in both username and password.");
+    if (!email.trim() || !password.trim()) {
+      setMessage("Please fill in both email and password.");
       return;
     }
 
@@ -43,25 +47,22 @@ export default function Login() {
     setSubmitButtonState("onclic");
 
     try {
-      // --- Zero-knowledge: get salt, derive verifier, call login ---
-      // 1. Get salt from backend
-      const saltResp = await import('../api/authApi').then(mod => mod.getSalt(username.trim()));
-      const saltData = await saltResp;
-      const salt = saltData?.salt || username.trim(); // fallback
+      const response = await login({
+        email: email.trim(),
+        password,
+        deviceFingerprint: 'browser_test',
+      });
 
-      // 2. Derive verifier (simulate SRP or PBKDF2)
-      const { deriveKey } = await import('../crypto/keyDerivation');
-      const authVerifier = await deriveKey(password, salt);
-      // Export verifier to raw bytes (simulate)
-      const authVerifierRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', authVerifier));
-
-      // 3. Call login API
-      const { login } = await import('../api/authApi');
-      const response = await login(username.trim(), authVerifierRaw);
-
-      if (response?.token) {
+      if (response?.access_token) {
+        const masterKey = await deriveKey(password, email.trim().toLowerCase());
+        setMasterKey(masterKey);
+        setToken(response.access_token);
         setSubmitButtonState("validate");
-        navigate("/main", { state: { username: username.trim() } });
+        navigate("/main", {
+          state: {
+            username: response.username || location.state?.username || email.trim(),
+          },
+        });
       } else {
         setMessage(response?.error || "Login failed. Please check your credentials.");
         setSubmitButtonState("");
@@ -83,10 +84,10 @@ export default function Login() {
           <p className="error-message">{message}</p>
         )}
         <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
         />
         <div className="password-field">
           <input
