@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 let accessToken = localStorage.getItem('cloudlock_token') || null;
 
@@ -11,7 +11,7 @@ export function setAccessToken(token) {
   }
 }
 
-export async function post(endpoint, data, timeout = 6000) {
+export async function post(endpoint, data, timeout = 30000) {
   return fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
     method: 'POST',
     headers: {
@@ -42,6 +42,12 @@ export async function get(endpoint, timeout = 10000) {
   }, timeout);
 }
 
+export default {
+  post,
+  put,
+  get,
+};
+
 // Helper for fetch with timeout
 async function fetchWithTimeout(url, options, timeout = 10000) {
   const controller = new AbortController();
@@ -50,7 +56,18 @@ async function fetchWithTimeout(url, options, timeout = 10000) {
     const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(id);
     if (!response.ok) {
-      return { status: response.status, error: response.statusText };
+      let error = response.statusText;
+      try {
+        const payload = await response.json();
+        error = payload.detail || payload.error || error;
+      } catch {
+        try {
+          error = await response.text() || error;
+        } catch {
+          error = response.statusText;
+        }
+      }
+      return { status: response.status, error };
     }
     return response.json();
   } catch (error) {

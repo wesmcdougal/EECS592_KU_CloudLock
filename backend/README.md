@@ -26,6 +26,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+If you want to run without AWS resources locally, set `USE_DYNAMODB=false` in `backend/.env`.
+
 Visit http://localhost:8000/docs for API documentation.
 
 ## 6. API Testing Guide

@@ -4,15 +4,16 @@ import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
 import { AuthContext } from "../context/AuthContext";
 import { saveVault, getVault } from "../api/vaultApi";
+import { logout as apiLogout } from "../api/authApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
 
 
 function MainPage() {
-        const [showSpinner, setShowSpinner] = useState(false);
-        const [retryLoad, setRetryLoad] = useState(false);
-        const [retrySave, setRetrySave] = useState(false);
-    const { masterKey, token } = useContext(AuthContext);
+    const [showSpinner, setShowSpinner] = useState(false);
+    const [retryLoad, setRetryLoad] = useState(false);
+    const [retrySave, setRetrySave] = useState(false);
+    const { masterKey, token, logout } = useContext(AuthContext);
     const location = useLocation();
     const displayUsername = location.state?.username || "User";
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -78,7 +79,6 @@ function MainPage() {
         setMfaModalStep("actions");
     }
 
-        const { logout } = useContext(AuthContext);
     function openUpdateForm() {
         if (selectedEntityIndex === null) {
             return;
@@ -106,7 +106,7 @@ function MainPage() {
         }));
     }
 
-    function handleUpdateEntity(event) {
+    async function handleUpdateEntity(event) {
         event.preventDefault();
 
         if (selectedEntityIndex === null) {
@@ -117,18 +117,22 @@ function MainPage() {
             return;
         }
 
-        setEntities((previous) => previous.map((entity, index) => (
+        const nextEntities = entities.map((entity, index) => (
             index === selectedEntityIndex ? { ...updateFormData } : entity
-        )));
+        ));
+        setEntities(nextEntities);
+        await handleSaveVault(nextEntities);
         closeMfaModal();
     }
 
-    function handleDeleteEntity() {
+    async function handleDeleteEntity() {
         if (selectedEntityIndex === null) {
             return;
         }
 
-        setEntities((previous) => previous.filter((_, index) => index !== selectedEntityIndex));
+        const nextEntities = entities.filter((_, index) => index !== selectedEntityIndex);
+        setEntities(nextEntities);
+        await handleSaveVault(nextEntities);
         closeMfaModal();
     }
 
@@ -144,12 +148,14 @@ function MainPage() {
         }));
     }
 
-    function handleAddEntity(event) {
+    async function handleAddEntity(event) {
         event.preventDefault();
         if (!formData.name || !formData.username || !formData.password) {
             return;
         }
-        setEntities((previous) => [...previous, formData]);
+        const nextEntities = [...entities, formData];
+        setEntities(nextEntities);
+        await handleSaveVault(nextEntities);
         closeModal();
     }
 
@@ -201,13 +207,19 @@ function MainPage() {
         try {
             const envelope = await getVault();
             setShowSpinner(false);
-            if (envelope && envelope.status && [401,403,409,500,'timeout','error'].includes(envelope.status)) {
+            if (envelope && envelope.status && [401,403,404,409,500,'timeout','error'].includes(envelope.status)) {
                 let msg = "";
                 switch(envelope.status) {
                     case 401:
                         msg = "Session expired. Please log in again."; break;
                     case 403:
                         msg = "Access denied. You do not have permission."; break;
+                    case 404:
+                        setEntities([]);
+                        setErrorMessage("");
+                        setRetryLoad(false);
+                        setLoading(false);
+                        return;
                     case 409:
                         msg = "Conflict error. Please retry."; break;
                     case 500:
@@ -242,9 +254,15 @@ function MainPage() {
         setLoading(false);
     }
 
-    function clearStoredCredentials() {
+    async function clearStoredCredentials() {
+        if (masterKey) {
+            await handleSaveVault(entities);
+        }
+        apiLogout().catch(() => null);
+        logout();
         localStorage.removeItem("username");
         localStorage.removeItem("password");
+        localStorage.removeItem("cloudlock_token");
     }
 
     // Load vault on mount
@@ -254,14 +272,6 @@ function MainPage() {
         }
         // eslint-disable-next-line
     }, [masterKey, token]);
-
-    // Save vault whenever entities change (except initial load)
-    useEffect(() => {
-        if (!loading && masterKey) {
-            handleSaveVault(entities);
-        }
-        // eslint-disable-next-line
-    }, [entities]);
 
     if (loading || showSpinner) {
         return (
@@ -329,7 +339,7 @@ function MainPage() {
                                     aria-label={`${entity.name} (${entity.username})`}
                                     title={`Username: ${entity.username}`}
                                     onClick={() => openMfaModal(index)}
-                                >{entity.name}</button>
+                                />
                             </li>
                         ))}
                     </ul>
@@ -337,10 +347,10 @@ function MainPage() {
                 <button
                     id="add-entity-button"
                     className="action-button main-add-button"
-                    data-label="ADD"
+                    data-label="Add Entry"
                     aria-label="Add Entity"
                     onClick={openModal}
-                >Add Entity</button>
+                />
             </div>
 
             {isModalOpen && (
@@ -381,14 +391,14 @@ function MainPage() {
                                     data-label="ADD"
                                     aria-label="Add"
                                     disabled={!isAddFormValid}
-                                >Add</button>
+                                />
                                 <button
                                     type="button"
                                     className="action-button entity-modal-button"
                                     data-label="CANCEL"
                                     aria-label="Cancel"
                                     onClick={closeModal}
-                                >Cancel</button>
+                                />
                             </div>
                         </form>
                     </div>
@@ -408,7 +418,7 @@ function MainPage() {
                                         data-label="OK"
                                         aria-label="OK"
                                         onClick={showMfaActions}
-                                    >OK</button>
+                                    />
                                 </div>
                             </>
                         )}
@@ -423,14 +433,14 @@ function MainPage() {
                                         data-label="UPDATE"
                                         aria-label="Update"
                                         onClick={openUpdateForm}
-                                    >Update</button>
+                                    />
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="DELETE"
                                         aria-label="Delete"
                                         onClick={openDeleteConfirmation}
-                                    >Delete</button>
+                                    />
                                 </div>
                             </>
                         )}
@@ -446,14 +456,14 @@ function MainPage() {
                                         data-label="DELETE"
                                         aria-label="Confirm Delete"
                                         onClick={handleDeleteEntity}
-                                    >Delete</button>
+                                    />
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="CANCEL"
                                         aria-label="Cancel"
                                         onClick={closeMfaModal}
-                                    >Cancel</button>
+                                    />
                                 </div>
                             </>
                         )}
@@ -505,14 +515,14 @@ function MainPage() {
                                         className="action-button entity-modal-button"
                                         data-label="UPDATE"
                                         aria-label="Update"
-                                    >Update</button>
+                                    />
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="CANCEL"
                                         aria-label="Cancel"
                                         onClick={closeMfaModal}
-                                    >Cancel</button>
+                                    />
                                 </div>
                             </form>
                         )}
