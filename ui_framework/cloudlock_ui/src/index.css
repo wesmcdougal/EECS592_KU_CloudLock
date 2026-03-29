@@ -1,3 +1,16 @@
+/*
+ * Global Stylesheet (index.css)
+ *
+ * Defines shared visual styles across CloudLock UI. Responsibilities include:
+ * - Base typography, color, and layout primitives
+ * - Shared component classes and modal styles
+ * - Main page layout refinements and preview message styling
+ * - MFA modal option button and selected-state styling
+ *
+ * Revision History:
+ * - Wesley McDougal - 29MAR2026 - Added main header adjustments and MFA UI style updates
+ */
+
 :root {
   font-family: monospace, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -365,21 +378,35 @@ button:disabled {
 .main-header {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   width: 100%;
+  min-height: 72px;
 }
 
 .main-logout-nav ul {
   margin: 0;
 }
 
-.main-title {
+.main-title-group {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   text-align: center;
+}
+
+.main-title {
+  margin: 0;
+}
+
+.preview-message {
+  max-width: min(52vw, 560px);
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .main-search-input {
@@ -484,6 +511,7 @@ button:disabled {
   width: min(90vw, 360px);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 12px;
   padding: 20px;
   border: 2px solid #ffffff;
@@ -508,6 +536,29 @@ button:disabled {
 
 .entity-modal-button {
   width: 120px;
+}
+
+.mfa-option-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mfa-option-button {
+  width: 100%;
+  border-radius: 8px;
+}
+
+.mfa-option-selected {
+  background: #1ecd97;
+  color: #1b1b1b;
+  border-color: #1ecd97;
+}
+
+.mfa-option-selected:hover {
+  background: #15b883;
+  color: #101010;
+  border-color: #15b883;
 }
 
 @keyframes rotating {

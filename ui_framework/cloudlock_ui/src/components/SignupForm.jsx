@@ -1,14 +1,35 @@
+/**
+ * Signup Form Component (SignupForm.jsx)
+ *
+ * Renders account creation UI and enrollment preferences. Responsibilities include:
+ * - Collecting registration form input and validation state
+ * - Password visibility and strength checks
+ * - MFA enrollment option selection (biometric/TOTP)
+ * - Signup API submission with MFA preferences
+ * - WebAuthn credential enrollment during biometric setup
+ *
+ * Revision History:
+ * - Wesley McDougal - 29MAR2026 - Added MFA setup modal and WebAuthn enrollment flow
+ */
+
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import eyeOpen from '../assets/eyeopen.png';
 import eyeClose from '../assets/eyeclose.png';
 import { signup } from '../api/authApi';
+import { getWebAuthnRegistrationChallenge, createWebAuthnCredential } from '../api/webauthnApi';
 import { generateStrongPassword } from '../crypto/passwordGenerator';
 import { getPasswordStrength } from '../crypto/passwordStrength';
 
 export default function SignUp() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', username: '', password: '', confirmPassword: '', recovery: '' });
+  const [mfaEnrollment, setMfaEnrollment] = useState({
+    enableBiometric: false,
+    enableTotp: false,
+    deviceLabel: '',
+  });
+  const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -61,13 +82,40 @@ export default function SignUp() {
     setSubmitButtonState('onclic');
 
     try {
+      const selectedMfaEnrollment = (mfaEnrollment.enableBiometric || mfaEnrollment.enableTotp)
+        ? {
+            enable_biometric: mfaEnrollment.enableBiometric,
+            enable_totp: mfaEnrollment.enableTotp,
+            device_label: mfaEnrollment.deviceLabel.trim() || null,
+          }
+        : null;
+
       const response = await signup({
         email: form.email.trim(),
         password: form.password,
         username: form.username.trim(),
+        mfaEnrollment: selectedMfaEnrollment,
       });
 
       if (response?.user_id) {
+        // If biometric is enabled, handle WebAuthn credential creation
+        if (mfaEnrollment.enableBiometric) {
+          try {
+            // Get WebAuthn registration challenge
+            const challengeResponse = await getWebAuthnRegistrationChallenge(response.user_id);
+            
+            // Create WebAuthn credential
+            await createWebAuthnCredential(
+              challengeResponse.challenge,
+              response.user_id,
+              mfaEnrollment.deviceLabel.trim() || 'My Device'
+            );
+          } catch (webauthnError) {
+            console.error('WebAuthn enrollment failed:', webauthnError);
+            // Continue to login even if WebAuthn fails (TOTP can be backup)
+          }
+        }
+
         setSubmitButtonState('validate');
         navigate("/login", {
           state: {
@@ -178,6 +226,16 @@ export default function SignUp() {
       </button>
       </div>
 
+      <div className="generate-button-container">
+        <button
+          type="button"
+          className="action-button"
+          onClick={() => setIsMfaModalOpen(true)}
+        >
+          SET UP MFA
+        </button>
+      </div>
+
       <input
         type="text"
         placeholder="Recovery Key or Security Answer"
@@ -193,6 +251,67 @@ export default function SignUp() {
         aria-label="Sign Up"
       />
     </div>
+
+    {isMfaModalOpen && (
+      <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="MFA setup">
+        <div className="entity-modal">
+          <h2>MFA Setup</h2>
+          <p>Choose at least one method to enroll after signup.</p>
+
+          <div className="mfa-option-actions">
+            <button
+              type="button"
+              className={`action-button entity-modal-button mfa-option-button ${mfaEnrollment.enableBiometric ? 'mfa-option-selected' : ''}`.trim()}
+              data-label={mfaEnrollment.enableBiometric ? 'BIOMETRIC ON' : 'BIOMETRIC OFF'}
+              aria-label="Toggle biometric MFA enrollment"
+              aria-pressed={mfaEnrollment.enableBiometric}
+              onClick={() => setMfaEnrollment((previous) => ({
+                ...previous,
+                enableBiometric: !previous.enableBiometric,
+              }))}
+            />
+            <button
+              type="button"
+              className={`action-button entity-modal-button mfa-option-button ${mfaEnrollment.enableTotp ? 'mfa-option-selected' : ''}`.trim()}
+              data-label={mfaEnrollment.enableTotp ? 'AUTH APP ON' : 'AUTH APP OFF'}
+              aria-label="Toggle authenticator app MFA enrollment"
+              aria-pressed={mfaEnrollment.enableTotp}
+              onClick={() => setMfaEnrollment((previous) => ({
+                ...previous,
+                enableTotp: !previous.enableTotp,
+              }))}
+            />
+          </div>
+
+          <input
+            type="text"
+            placeholder="Device label (optional, e.g. MacBook Pro)"
+            value={mfaEnrollment.deviceLabel}
+            onChange={(event) => setMfaEnrollment((previous) => ({
+              ...previous,
+              deviceLabel: event.target.value,
+            }))}
+          />
+
+          <div className="entity-modal-actions">
+            <button
+              type="button"
+              className="action-button entity-modal-button"
+              data-label="SAVE"
+              aria-label="Save MFA Setup"
+              onClick={() => setIsMfaModalOpen(false)}
+            />
+            <button
+              type="button"
+              className="action-button entity-modal-button"
+              data-label="CANCEL"
+              aria-label="Cancel MFA Setup"
+              onClick={() => setIsMfaModalOpen(false)}
+            />
+          </div>
+        </div>
+      </div>
+    )}
     </form>
   );
 }

@@ -1,3 +1,17 @@
+/**
+ * Main Vault Page (MainPage.jsx)
+ *
+ * Renders the primary credential management experience. Responsibilities include:
+ * - Loading and decrypting encrypted vault records
+ * - Managing add/update/delete flows for credential entities
+ * - Handling search, modal state, and update form interactions
+ * - Persisting encrypted vault updates via backend APIs
+ * - Providing local preview-mode data in development bypass mode
+ *
+ * Revision History:
+ * - Wesley McDougal - 29MAR2026 - Added local preview mode and header message placement updates
+ */
+
 import { useEffect, useState, useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
@@ -8,6 +22,18 @@ import { logout as apiLogout } from "../api/authApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
 
+const previewEntities = [
+    {
+        name: "Github",
+        username: "octocat",
+        password: "preview-password-1",
+    },
+    {
+        name: "University Portal",
+        username: "student_demo",
+        password: "preview-password-2",
+    },
+];
 
 function MainPage() {
     const [showSpinner, setShowSpinner] = useState(false);
@@ -36,6 +62,7 @@ function MainPage() {
         password: "",
     });
     const [showUpdatePassword, setShowUpdatePassword] = useState(false);
+    const isPreviewMode = import.meta.env.DEV && import.meta.env.VITE_DEV_BYPASS_AUTH === "true" && !masterKey;
 
     const query = searchTerm.trim().toLowerCase();
     const isAddFormValid =
@@ -269,9 +296,20 @@ function MainPage() {
     useEffect(() => {
         if (masterKey) {
             handleLoadVault();
+            return;
         }
+
+        if (isPreviewMode) {
+            setEntities(previewEntities);
+            setErrorMessage("");
+            setRetryLoad(false);
+            setLoading(false);
+            return;
+        }
+
+        setLoading(false);
         // eslint-disable-next-line
-    }, [masterKey, token]);
+    }, [masterKey, token, isPreviewMode]);
 
     if (loading || showSpinner) {
         return (
@@ -290,7 +328,14 @@ function MainPage() {
                         <li><Link to="/" onClick={clearStoredCredentials}>Logout</Link></li>
                     </ul>
                 </nav>
-                <h1 className="main-title">Welcome {displayUsername}</h1>
+                <div className="main-title-group">
+                    <h1 className="main-title">Welcome {displayUsername}</h1>
+                    {isPreviewMode && (
+                        <div className="preview-message">
+                            Preview mode is enabled. Vault changes stay in local UI state only.
+                        </div>
+                    )}
+                </div>
                 {errorMessage && (
                     <div className="error-message" style={{ color: 'red', margin: '8px 0' }}>{errorMessage}
                         {retryLoad && (
