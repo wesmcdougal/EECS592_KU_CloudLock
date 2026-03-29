@@ -8,6 +8,15 @@ venv/
 .env
 .env.local
 
+# Backend/local env variants
+backend/.env
+backend/.env.*
+!backend/.env.ex
+
+# Frontend/local env variants
+ui_framework/cloudlock_ui/.env
+ui_framework/cloudlock_ui/.env.*
+
 # IDE
 .vscode/
 .idea/
@@ -20,3 +29,11 @@ Thumbs.db
 .dist/
 dist/
 build/
+
+# AWS/deployment local artifacts
+backend/lambda_deployment*.zip
+.aws/
+.aws-sam/
+.serverless/
+.cdk.out/
+samconfig.toml

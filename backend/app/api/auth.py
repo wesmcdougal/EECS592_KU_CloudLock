@@ -1,26 +1,30 @@
 # backend/app/api/auth.py
 """
-Authentication endpoints — zero-knowledge design.
+Authentication API Router (auth.py)
 
-The server receives only:
-  email_lookup    = SHA-256(email_lower)      — never the real email
-  username_lookup = SHA-256(username_lower)   — never the real username
-  auth_verifier   = PBKDF2(password, email+":auth") as base64
-                    — never the plaintext password
+Serves as the primary auth entry point for account access. Responsibilities include:
+- Zero-knowledge registration and login validation
+- Session token issuance and logout handling
+- MFA gate behavior for login (challenge-first flow)
+- MFA verification for TOTP and biometric methods
+- Current-user token verification endpoint
 
-The server stores:
-  email_lookup, username_lookup (hashes)
-  verifier_hash = bcrypt(auth_verifier)
-
-The server NEVER stores or logs plaintext email, username, or password.
+Revision History:
+- Wesley McDougal - 29MAR2026 - Added MFA challenge verification and login gate flow
 """
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import re
 
 from app.models.schemas import (
-    RegisterRequest, RegisterResponse,
-    LoginRequest, LoginResponse
+    LoginRequest,
+    LoginResponse,
+    MfaLoginVerifyRequest,
+    MfaLoginVerifyResponse,
+    RegisterRequest,
+    RegisterResponse,
 )
+from app.config import settings
 from app.services.database import db
 
 router = APIRouter()
@@ -40,6 +44,7 @@ async def register(request: RegisterRequest):
             auth_verifier=request.auth_verifier,
             auth_image_id=request.auth_image_id or "img_001",
             username_lookup=request.username_lookup,
+            mfa_enrollment=request.mfa_enrollment,
         )
 
         return RegisterResponse(
@@ -91,6 +96,17 @@ async def login(request: LoginRequest):
     db.reset_failed_attempts(user.user_id)
     db.update_last_login(user.user_id)
 
+    if user.mfa_enabled:
+        challenge_token = db.create_mfa_challenge(user.user_id, user.mfa_methods)
+        return LoginResponse(
+            access_token=None,
+            token_type="bearer",
+            user_id=user.user_id,
+            requires_mfa=True,
+            mfa_types=user.mfa_methods,
+            mfa_challenge_token=challenge_token,
+        )
+
     access_token = db.create_session(user.user_id)
 
     return LoginResponse(
@@ -98,6 +114,66 @@ async def login(request: LoginRequest):
         token_type="bearer",
         user_id=user.user_id,
         requires_mfa=False,
+        mfa_types=[],
+    )
+
+
+@router.post("/login/mfa/verify", response_model=MfaLoginVerifyResponse)
+async def verify_login_mfa(request: MfaLoginVerifyRequest):
+    challenge = db.verify_mfa_challenge(request.mfa_challenge_token)
+    if not challenge:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MFA challenge invalid or expired",
+        )
+
+    user_id = challenge.get("user_id")
+    allowed_methods = challenge.get("mfa_methods", [])
+    method = request.method.strip().lower()
+
+    if method not in allowed_methods:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MFA method is not enabled for this account",
+        )
+
+    if method == "totp":
+        if not request.totp_code or not re.fullmatch(r"\d{6}", request.totp_code):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A valid 6-digit TOTP code is required",
+            )
+
+        # TODO: Replace this with Cognito VerifySoftwareToken / RespondToAuthChallenge.
+        if request.totp_code != settings.mfa_dev_totp_code:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid MFA code",
+            )
+
+    if method == "biometric":
+        if not request.device_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="device_id is required for biometric verification",
+            )
+
+        status_snapshot = db.get_mfa_status(user_id)
+        has_device = any(
+            device.device_id == request.device_id
+            for device in status_snapshot.get("biometric_devices", [])
+        )
+        if not has_device:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="This device is not registered for biometric MFA",
+            )
+
+    access_token = db.create_session(user_id)
+    return MfaLoginVerifyResponse(
+        access_token=access_token,
+        token_type="bearer",
+        user_id=user_id,
     )
 
 # ============ GET CURRENT USER ============
