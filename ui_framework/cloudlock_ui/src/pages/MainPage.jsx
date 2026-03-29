@@ -5,8 +5,10 @@ import eyeClose from "../assets/eyeclose.png";
 import { AuthContext } from "../context/AuthContext";
 import { saveVault, getVault } from "../api/vaultApi";
 import { logout as apiLogout } from "../api/authApi";
+
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
+import { cacheEncryptedVault, loadCachedEncryptedVault } from "../crypto/storageFormat";
 
 
 function MainPage() {
@@ -51,6 +53,46 @@ function MainPage() {
     const selectedEntityName = selectedEntityIndex !== null
         ? entities[selectedEntityIndex]?.name || "this entity"
         : "this entity";
+
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    // Listen for online/offline events
+    useEffect(() => {
+        function handleOnline() {
+            setIsOnline(true);
+            processQueuedVaultOps();
+        }
+        function handleOffline() {
+            setIsOnline(false);
+        }
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+        // eslint-disable-next-line
+    }, []);
+
+    // Process queued vault operations when back online
+    async function processQueuedVaultOps() {
+        if (!masterKey) return;
+        const queue = loadVaultOpsQueue();
+        if (!queue.length) return;
+        let currentEntities = [...entities];
+        for (const op of queue) {
+            if (op.type === 'add') {
+                currentEntities.push(op.entity);
+            } else if (op.type === 'update') {
+                currentEntities[op.index] = op.entity;
+            } else if (op.type === 'delete') {
+                currentEntities.splice(op.index, 1);
+            }
+        }
+        await handleSaveVault(currentEntities);
+        clearVaultOpsQueue();
+        setEntities(currentEntities);
+    }
 
     function openModal() {
         setIsModalOpen(true);
@@ -121,7 +163,11 @@ function MainPage() {
             index === selectedEntityIndex ? { ...updateFormData } : entity
         ));
         setEntities(nextEntities);
-        await handleSaveVault(nextEntities);
+        if (isOnline) {
+            await handleSaveVault(nextEntities);
+        } else {
+            queueVaultOperation({ type: 'update', index: selectedEntityIndex, entity: updateFormData });
+        }
         closeMfaModal();
     }
 
@@ -132,7 +178,11 @@ function MainPage() {
 
         const nextEntities = entities.filter((_, index) => index !== selectedEntityIndex);
         setEntities(nextEntities);
-        await handleSaveVault(nextEntities);
+        if (isOnline) {
+            await handleSaveVault(nextEntities);
+        } else {
+            queueVaultOperation({ type: 'delete', index: selectedEntityIndex });
+        }
         closeMfaModal();
     }
 
@@ -154,8 +204,11 @@ function MainPage() {
             return;
         }
         const nextEntities = [...entities, formData];
-        setEntities(nextEntities);
-        await handleSaveVault(nextEntities);
+        if (isOnline) {
+            await handleSaveVault(nextEntities);
+        } else {
+            queueVaultOperation({ type: 'add', entity: formData });
+        }
         closeModal();
     }
 
@@ -166,6 +219,8 @@ function MainPage() {
         try {
             const envelope = await envelopeEncrypt(updatedEntities, masterKey);
             const response = await saveVault(envelope);
+            // Cache encrypted envelope locally after successful save
+            cacheEncryptedVault(envelope);
             setShowSpinner(false);
             if (response && response.status && [401,403,409,500,'timeout','error'].includes(response.status)) {
                 let msg = "";
@@ -205,8 +260,25 @@ function MainPage() {
         setLoading(true);
         setShowSpinner(true);
         try {
-            const envelope = await getVault();
+            let envelope;
+            let online = true;
+            try {
+                envelope = await getVault();
+            } catch (err) {
+                online = false;
+            }
             setShowSpinner(false);
+            if (!online || !envelope) {
+                // Offline or failed to fetch: try local cache
+                envelope = loadCachedEncryptedVault();
+                if (!envelope) {
+                    setEntities([]);
+                    setErrorMessage("No cached vault available offline.");
+                    setRetryLoad(false);
+                    setLoading(false);
+                    return;
+                }
+            }
             if (envelope && envelope.status && [401,403,404,409,500,'timeout','error'].includes(envelope.status)) {
                 let msg = "";
                 switch(envelope.status) {
@@ -235,6 +307,8 @@ function MainPage() {
                 setEntities([]);
                 setRetryLoad(true);
             } else if (envelope && envelope.encryptedData && envelope.encryptedDEK) {
+                // Cache envelope after successful online load
+                if (online) cacheEncryptedVault(envelope);
                 const data = await envelopeDecrypt(envelope, masterKey);
                 setEntities(data);
                 setErrorMessage("");
@@ -261,7 +335,6 @@ function MainPage() {
         apiLogout().catch(() => null);
         logout();
         localStorage.removeItem("username");
-        localStorage.removeItem("password");
         localStorage.removeItem("cloudlock_token");
     }
 
@@ -325,6 +398,9 @@ function MainPage() {
                             )}
                         </section>
                     )}
+                </div>
+                <div className="main-status-bar" style={{ margin: '8px 0', color: isOnline ? 'green' : 'orange', fontWeight: 500 }}>
+                    {isOnline ? 'Online' : 'Offline'}
                 </div>
             </header>
             <div className="main-content">
