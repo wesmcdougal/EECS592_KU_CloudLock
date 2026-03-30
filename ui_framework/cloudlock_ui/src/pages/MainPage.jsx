@@ -21,6 +21,8 @@ import { saveVault, getVault } from "../api/vaultApi";
 import { logout as apiLogout } from "../api/authApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
+import { generateStrongPassword } from "../crypto/passwordGenerator";
+import { getPasswordStrength } from "../crypto/passwordStrength";
 
 const previewEntities = [
     {
@@ -61,6 +63,7 @@ function MainPage() {
         username: "",
         password: "",
     });
+    const [showAddPassword, setShowAddPassword] = useState(false);
     const [showUpdatePassword, setShowUpdatePassword] = useState(false);
     const isPreviewMode = import.meta.env.DEV && import.meta.env.VITE_DEV_BYPASS_AUTH === "true" && !masterKey;
 
@@ -69,12 +72,17 @@ function MainPage() {
         formData.name.trim() &&
         formData.username.trim() &&
         formData.password.trim();
+
+    const addPasswordStrength = getPasswordStrength(formData.password);
+    const updatePasswordStrength = getPasswordStrength(updateFormData.password);
+
     const searchResults = query
         ? entities.filter((entity) => (
             entity.name.toLowerCase().includes(query) ||
             entity.username.toLowerCase().includes(query)
         ))
         : [];
+
     const selectedEntityName = selectedEntityIndex !== null
         ? entities[selectedEntityIndex]?.name || "this entity"
         : "this entity";
@@ -86,6 +94,7 @@ function MainPage() {
     function closeModal() {
         setIsModalOpen(false);
         setFormData({ name: "", username: "", password: "" });
+        setShowAddPassword(false);
     }
 
     function openMfaModal(index) {
@@ -186,7 +195,22 @@ function MainPage() {
         closeModal();
     }
 
-    // Save vault to backend (encrypted)
+    function handleGenerateAddPassword() {
+        const password = generateStrongPassword(14);
+        setFormData((previous) => ({
+            ...previous,
+            password,
+        }));
+    }
+
+    function handleGenerateUpdatePassword() {
+        const password = generateStrongPassword(14);
+        setUpdateFormData((previous) => ({
+            ...previous,
+            password,
+        }));
+    }
+
     async function handleSaveVault(updatedEntities) {
         if (!masterKey) return;
         setShowSpinner(true);
@@ -226,7 +250,6 @@ function MainPage() {
         }
     }
 
-    // Load vault from backend (decrypt)
     async function handleLoadVault() {
         if (!masterKey) return;
         setLoading(true);
@@ -292,7 +315,6 @@ function MainPage() {
         localStorage.removeItem("cloudlock_token");
     }
 
-    // Load vault on mount
     useEffect(() => {
         if (masterKey) {
             handleLoadVault();
@@ -400,53 +422,73 @@ function MainPage() {
 
             {isModalOpen && (
                 <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="Add entity">
-                    <div className="entity-modal">
-                        <form onSubmit={handleAddEntity}>
-                            <h2>Add Entity</h2>
+                    <form className="entity-modal" onSubmit={handleAddEntity}>
+                        <h2>Add Entity</h2>
+
+                        <input
+                            type="text"
+                            name="name"
+                            placeholder="Name"
+                            value={formData.name}
+                            onChange={handleInputChange}
+                            required
+                        />
+                        <input
+                            type="text"
+                            name="username"
+                            placeholder="Username"
+                            value={formData.username}
+                            onChange={handleInputChange}
+                            required
+                        />
+
+                        <div className="password-field">
                             <input
-                                type="text"
-                                name="name"
-                                placeholder="Name"
-                                value={formData.name}
+                                type={showAddPassword ? "text" : "password"}
+                                name="password"
+                                placeholder="Password"
+                                value={formData.password}
                                 onChange={handleInputChange}
                                 required
                             />
-                            <input
-                                type="text"
-                                name="username"
-                                placeholder="Username"
-                                value={formData.username}
-                                onChange={handleInputChange}
-                                required
-                            />
-                            <div className="password-field">
-                                <input
-                                    type="password"
-                                    name="password"
-                                    placeholder="Password"
-                                    value={formData.password}
-                                    onChange={handleInputChange}
-                                    required
+                            <button
+                                type="button"
+                                className="password-toggle"
+                                onClick={() => setShowAddPassword((previous) => !previous)}
+                                aria-label={showAddPassword ? "Hide password" : "Show password"}
+                            >
+                                <img
+                                    src={showAddPassword ? eyeClose : eyeOpen}
+                                    alt={showAddPassword ? "Hide password" : "Show password"}
+                                    className="password-toggle-icon"
                                 />
-                            </div>
-                            <div className="entity-modal-actions">
-                                <button
-                                    type="submit"
-                                    className="action-button entity-modal-button"
-                                    data-label="ADD"
-                                    aria-label="Add"
-                                    disabled={!isAddFormValid}
-                                />
-                                <button
-                                    type="button"
-                                    className="action-button entity-modal-button"
-                                    data-label="CANCEL"
-                                    aria-label="Cancel"
-                                    onClick={closeModal}
-                                />
-                            </div>
-                        </form>
-                    </div>
+                            </button>
+                        </div>
+
+                        {formData.password && (
+                            <p className="password-strength-text">
+                                Password strength:
+                                <span className={`strength-${addPasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}>
+                                    {" "}{addPasswordStrength.label}
+                                </span>
+                            </p>
+                        )}
+
+                        <div className="generate-button-container">
+                            <button
+                                type="button"
+                                className="action-button"
+                                onClick={handleGenerateAddPassword}
+                            >
+                                GENERATE?
+                            </button>
+                        </div>
+
+                        <div className="entity-modal-actions">
+                            <button type="submit" disabled={!isAddFormValid} className="action-button entity-modal-button" data-label="ADD" aria-label="Add" />
+                            <button type="button" className="action-button entity-modal-button" data-label="CANCEL" aria-label="Cancel" onClick={closeModal} />
+                        </div>
+                    </form>
                 </div>
             )}
 
@@ -532,6 +574,7 @@ function MainPage() {
                                     onChange={handleUpdateInputChange}
                                     required
                                 />
+
                                 <div className="password-field">
                                     <input
                                         type={showUpdatePassword ? "text" : "password"}
@@ -554,6 +597,26 @@ function MainPage() {
                                         />
                                     </button>
                                 </div>
+
+                                {updateFormData.password && (
+                                    <p className="password-strength-text">
+                                        Password strength:
+                                        <span className={`strength-${updatePasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}>
+                                            {" "}{updatePasswordStrength.label}
+                                        </span>
+                                    </p>
+                                )}
+
+                                <div className="generate-button-container">
+                                    <button
+                                        type="button"
+                                        className="action-button"
+                                        onClick={handleGenerateUpdatePassword}
+                                    >
+                                        GENERATE?
+                                    </button>
+                                </div>
+
                                 <div className="entity-modal-actions">
                                     <button
                                         type="submit"
