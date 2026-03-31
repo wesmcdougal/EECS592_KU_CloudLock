@@ -1,4 +1,17 @@
-# app/config.py
+"""
+Application Configuration (config.py)
+
+Centralizes runtime settings used by backend services. Responsibilities include:
+- API app metadata and debug mode
+- AWS region and service identifiers
+- DynamoDB table configuration
+- JWT and MFA timing/security settings
+- Allowed CORS origins for client access
+
+Revision History:
+- Wesley McDougal - 29MAR2026 - Added MFA challenge and development TOTP configuration
+"""
+
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from typing import Optional
@@ -24,6 +37,8 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    mfa_challenge_expire_seconds: int = 60
+    mfa_dev_totp_code: str = "123456"
     
     # CORS
     allowed_origins: list = [

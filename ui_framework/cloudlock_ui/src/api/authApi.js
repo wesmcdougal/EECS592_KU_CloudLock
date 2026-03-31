@@ -1,3 +1,17 @@
+/**
+ * Auth API Client (authApi.js)
+ *
+ * Provides authentication API calls for the frontend. Responsibilities include:
+ * - Zero-knowledge signup payload construction
+ * - Zero-knowledge login payload construction
+ * - Access token storage lifecycle (set/clear)
+ * - MFA login verification API calls
+ * - Logout API request dispatch
+ *
+ * Revision History:
+ * - Wesley McDougal - 29MAR2026 - Added MFA verification API integration
+ */
+
 import apiService, { setAccessToken } from './apiService';
 import { sha256hex, deriveAuthVerifier } from '../crypto/keyDerivation';
 
@@ -10,7 +24,13 @@ import { sha256hex, deriveAuthVerifier } from '../crypto/keyDerivation';
  *
  * The server never receives plaintext email, username, or password.
  */
-export async function signup({ email, password, username, authImageId = 'img_001' }) {
+export async function signup({
+  email,
+  password,
+  username,
+  authImageId = 'img_001',
+  mfaEnrollment = null,
+}) {
   const emailLower = email.toLowerCase();
   const [emailLookup, usernameLookup, authVerifier] = await Promise.all([
     sha256hex(emailLower),
@@ -23,6 +43,7 @@ export async function signup({ email, password, username, authImageId = 'img_001
     username_lookup: usernameLookup,
     auth_verifier:   authVerifier,
     auth_image_id:   authImageId,
+    mfa_enrollment:  mfaEnrollment,
   });
 }
 
@@ -45,6 +66,18 @@ export async function login({ email, password, deviceFingerprint = 'browser' }) 
     auth_verifier:     authVerifier,
     device_fingerprint: deviceFingerprint,
   });
+  if (response.access_token) setAccessToken(response.access_token);
+  return response;
+}
+
+export async function verifyLoginMfa({ challengeToken, method, totpCode = null, deviceId = null }) {
+  const response = await apiService.post('/auth/login/mfa/verify', {
+    mfa_challenge_token: challengeToken,
+    method,
+    totp_code: totpCode,
+    device_id: deviceId,
+  });
+
   if (response.access_token) setAccessToken(response.access_token);
   return response;
 }

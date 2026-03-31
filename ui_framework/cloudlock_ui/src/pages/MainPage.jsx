@@ -1,3 +1,17 @@
+/**
+ * Main Vault Page (MainPage.jsx)
+ *
+ * Renders the primary credential management experience. Responsibilities include:
+ * - Loading and decrypting encrypted vault records
+ * - Managing add/update/delete flows for credential entities
+ * - Handling search, modal state, and update form interactions
+ * - Persisting encrypted vault updates via backend APIs
+ * - Providing local preview-mode data in development bypass mode
+ *
+ * Revision History:
+ * - Wesley McDougal - 29MAR2026 - Added local preview mode and header message placement updates
+ */
+
 import { useEffect, useState, useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
@@ -10,6 +24,21 @@ import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
 import { cacheEncryptedVault, loadCachedEncryptedVault } from "../crypto/storageFormat";
 
+import { generateStrongPassword } from "../crypto/passwordGenerator";
+import { getPasswordStrength } from "../crypto/passwordStrength";
+
+const previewEntities = [
+    {
+        name: "Github",
+        username: "octocat",
+        password: "preview-password-1",
+    },
+    {
+        name: "University Portal",
+        username: "student_demo",
+        password: "preview-password-2",
+    },
+];
 
 function MainPage() {
     const [showSpinner, setShowSpinner] = useState(false);
@@ -37,19 +66,26 @@ function MainPage() {
         username: "",
         password: "",
     });
+    const [showAddPassword, setShowAddPassword] = useState(false);
     const [showUpdatePassword, setShowUpdatePassword] = useState(false);
+    const isPreviewMode = import.meta.env.DEV && import.meta.env.VITE_DEV_BYPASS_AUTH === "true" && !masterKey;
 
     const query = searchTerm.trim().toLowerCase();
     const isAddFormValid =
         formData.name.trim() &&
         formData.username.trim() &&
         formData.password.trim();
+
+    const addPasswordStrength = getPasswordStrength(formData.password);
+    const updatePasswordStrength = getPasswordStrength(updateFormData.password);
+
     const searchResults = query
         ? entities.filter((entity) => (
             entity.name.toLowerCase().includes(query) ||
             entity.username.toLowerCase().includes(query)
         ))
         : [];
+
     const selectedEntityName = selectedEntityIndex !== null
         ? entities[selectedEntityIndex]?.name || "this entity"
         : "this entity";
@@ -101,6 +137,7 @@ function MainPage() {
     function closeModal() {
         setIsModalOpen(false);
         setFormData({ name: "", username: "", password: "" });
+        setShowAddPassword(false);
     }
 
     function openMfaModal(index) {
@@ -212,7 +249,22 @@ function MainPage() {
         closeModal();
     }
 
-    // Save vault to backend (encrypted)
+    function handleGenerateAddPassword() {
+        const password = generateStrongPassword(14);
+        setFormData((previous) => ({
+            ...previous,
+            password,
+        }));
+    }
+
+    function handleGenerateUpdatePassword() {
+        const password = generateStrongPassword(14);
+        setUpdateFormData((previous) => ({
+            ...previous,
+            password,
+        }));
+    }
+
     async function handleSaveVault(updatedEntities) {
         if (!masterKey) return;
         setShowSpinner(true);
@@ -254,7 +306,6 @@ function MainPage() {
         }
     }
 
-    // Load vault from backend (decrypt)
     async function handleLoadVault() {
         if (!masterKey) return;
         setLoading(true);
@@ -338,13 +389,23 @@ function MainPage() {
         localStorage.removeItem("cloudlock_token");
     }
 
-    // Load vault on mount
     useEffect(() => {
         if (masterKey) {
             handleLoadVault();
+            return;
         }
+
+        if (isPreviewMode) {
+            setEntities(previewEntities);
+            setErrorMessage("");
+            setRetryLoad(false);
+            setLoading(false);
+            return;
+        }
+
+        setLoading(false);
         // eslint-disable-next-line
-    }, [masterKey, token]);
+    }, [masterKey, token, isPreviewMode]);
 
     if (loading || showSpinner) {
         return (
@@ -363,7 +424,14 @@ function MainPage() {
                         <li><Link to="/" onClick={clearStoredCredentials}>Logout</Link></li>
                     </ul>
                 </nav>
-                <h1 className="main-title">Welcome {displayUsername}</h1>
+                <div className="main-title-group">
+                    <h1 className="main-title">Welcome {displayUsername}</h1>
+                    {isPreviewMode && (
+                        <div className="preview-message">
+                            Preview mode is enabled. Vault changes stay in local UI state only.
+                        </div>
+                    )}
+                </div>
                 {errorMessage && (
                     <div className="error-message" style={{ color: 'red', margin: '8px 0' }}>{errorMessage}
                         {retryLoad && (
@@ -431,53 +499,73 @@ function MainPage() {
 
             {isModalOpen && (
                 <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="Add entity">
-                    <div className="entity-modal">
-                        <form onSubmit={handleAddEntity}>
-                            <h2>Add Entity</h2>
+                    <form className="entity-modal" onSubmit={handleAddEntity}>
+                        <h2>Add Entity</h2>
+
+                        <input
+                            type="text"
+                            name="name"
+                            placeholder="Name"
+                            value={formData.name}
+                            onChange={handleInputChange}
+                            required
+                        />
+                        <input
+                            type="text"
+                            name="username"
+                            placeholder="Username"
+                            value={formData.username}
+                            onChange={handleInputChange}
+                            required
+                        />
+
+                        <div className="password-field">
                             <input
-                                type="text"
-                                name="name"
-                                placeholder="Name"
-                                value={formData.name}
+                                type={showAddPassword ? "text" : "password"}
+                                name="password"
+                                placeholder="Password"
+                                value={formData.password}
                                 onChange={handleInputChange}
                                 required
                             />
-                            <input
-                                type="text"
-                                name="username"
-                                placeholder="Username"
-                                value={formData.username}
-                                onChange={handleInputChange}
-                                required
-                            />
-                            <div className="password-field">
-                                <input
-                                    type="password"
-                                    name="password"
-                                    placeholder="Password"
-                                    value={formData.password}
-                                    onChange={handleInputChange}
-                                    required
+                            <button
+                                type="button"
+                                className="password-toggle"
+                                onClick={() => setShowAddPassword((previous) => !previous)}
+                                aria-label={showAddPassword ? "Hide password" : "Show password"}
+                            >
+                                <img
+                                    src={showAddPassword ? eyeClose : eyeOpen}
+                                    alt={showAddPassword ? "Hide password" : "Show password"}
+                                    className="password-toggle-icon"
                                 />
-                            </div>
-                            <div className="entity-modal-actions">
-                                <button
-                                    type="submit"
-                                    className="action-button entity-modal-button"
-                                    data-label="ADD"
-                                    aria-label="Add"
-                                    disabled={!isAddFormValid}
-                                />
-                                <button
-                                    type="button"
-                                    className="action-button entity-modal-button"
-                                    data-label="CANCEL"
-                                    aria-label="Cancel"
-                                    onClick={closeModal}
-                                />
-                            </div>
-                        </form>
-                    </div>
+                            </button>
+                        </div>
+
+                        {formData.password && (
+                            <p className="password-strength-text">
+                                Password strength:
+                                <span className={`strength-${addPasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}>
+                                    {" "}{addPasswordStrength.label}
+                                </span>
+                            </p>
+                        )}
+
+                        <div className="generate-button-container">
+                            <button
+                                type="button"
+                                className="action-button"
+                                onClick={handleGenerateAddPassword}
+                            >
+                                GENERATE?
+                            </button>
+                        </div>
+
+                        <div className="entity-modal-actions">
+                            <button type="submit" disabled={!isAddFormValid} className="action-button entity-modal-button" data-label="ADD" aria-label="Add" />
+                            <button type="button" className="action-button entity-modal-button" data-label="CANCEL" aria-label="Cancel" onClick={closeModal} />
+                        </div>
+                    </form>
                 </div>
             )}
 
@@ -563,6 +651,7 @@ function MainPage() {
                                     onChange={handleUpdateInputChange}
                                     required
                                 />
+
                                 <div className="password-field">
                                     <input
                                         type={showUpdatePassword ? "text" : "password"}
@@ -585,6 +674,26 @@ function MainPage() {
                                         />
                                     </button>
                                 </div>
+
+                                {updateFormData.password && (
+                                    <p className="password-strength-text">
+                                        Password strength:
+                                        <span className={`strength-${updatePasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}>
+                                            {" "}{updatePasswordStrength.label}
+                                        </span>
+                                    </p>
+                                )}
+
+                                <div className="generate-button-container">
+                                    <button
+                                        type="button"
+                                        className="action-button"
+                                        onClick={handleGenerateUpdatePassword}
+                                    >
+                                        GENERATE?
+                                    </button>
+                                </div>
+
                                 <div className="entity-modal-actions">
                                     <button
                                         type="submit"
