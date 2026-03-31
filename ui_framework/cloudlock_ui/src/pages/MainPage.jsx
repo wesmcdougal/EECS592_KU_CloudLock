@@ -690,279 +690,145 @@ function MainPage() {
                 </div>
             </header>
 
-            <div
-                className="main-content"
-                style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    marginTop: 24,
-                    padding: "0 24px 24px",
-                }}
-            >
-                <div
-                    style={{
-                        display: "flex",
-                        width: "100%",
-                        maxWidth: "1100px",
-                        minHeight: "500px",
-                        background: "#fff",
-                        border: "1px solid #d9d9d9",
-                        borderRadius: 16,
-                        overflow: "hidden",
-                        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.08)",
-                    }}
-                >
-                    <aside
-                        style={{
-                            width: "300px",
-                            borderRight: "1px solid #e5e5e5",
-                            padding: 20,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 20,
-                            background: "#fafafa",
-                        }}
+            <div className="main-content">
+                <div className="main-categories-column">
+                    <h2 style={{ marginTop: 0, marginBottom: 16 }}>Categories</h2>
+
+                    <div style={{ marginBottom: 16 }}>
+                        <input
+                            type="text"
+                            placeholder="New category name"
+                            value={newCategoryName}
+                            onChange={(event) => setNewCategoryName(event.target.value)}
+                            aria-label="New category name"
+                            disabled={categories.length >= MAX_CATEGORIES}
+                            className="category-form-input"
+                        />
+
+                        <button
+                            type="button"
+                            onClick={handleCreateCategory}
+                            disabled={categories.length >= MAX_CATEGORIES}
+                            className="category-form-button"
+                        >
+                            Create
+                        </button>
+
+                        {categories.length >= MAX_CATEGORIES && (
+                            <p style={{ marginTop: 8, marginBottom: 8 }}>
+                                Maximum of 5 categories reached.
+                            </p>
+                        )}
+
+                        <select
+                            value={renameCategoryId}
+                            onChange={(event) => setRenameCategoryId(event.target.value)}
+                            aria-label="Select category to rename"
+                            className="category-form-select"
+                        >
+                            <option value="">Select category to rename</option>
+                            {categories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                    {category.name}
+                                </option>
+                            ))}
+                        </select>
+
+                        <input
+                            type="text"
+                            placeholder="New name"
+                            value={renameCategoryName}
+                            onChange={(event) => setRenameCategoryName(event.target.value)}
+                            aria-label="Rename category"
+                            className="category-form-input"
+                        />
+
+                        <button
+                            type="button"
+                            onClick={handleRenameCategory}
+                            className="category-form-button"
+                        >
+                            Rename
+                        </button>
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setSelectedCategoryId("")}
+                        className={`category-filter-button ${selectedCategoryId === "" ? "category-filter-button-selected" : ""}`.trim()}
                     >
-                        <section className="category-management">
-                            <h2 style={{ marginTop: 0 }}>Categories</h2>
+                        All Categories
+                    </button>
 
-                            <div style={{ marginBottom: 12 }}>
-                                <input
-                                    type="text"
-                                    placeholder="New category name"
-                                    value={newCategoryName}
-                                    onChange={(event) => setNewCategoryName(event.target.value)}
-                                    aria-label="New category name"
-                                    disabled={categories.length >= MAX_CATEGORIES}
-                                    style={{ width: "100%" }}
-                                />
-
-                                <button
-                                    type="button"
-                                    style={{ marginTop: 8, width: "100%" }}
-                                    onClick={handleCreateCategory}
-                                    disabled={categories.length >= MAX_CATEGORIES}
-                                >
-                                    Create
-                                </button>
-                            </div>
-
-                            {categories.length >= MAX_CATEGORIES && (
-                                <p style={{ marginTop: 8 }}>
-                                    Maximum of 5 categories reached.
-                                </p>
-                            )}
-
-                            <div style={{ marginBottom: 12 }}>
-                                <select
-                                    value={renameCategoryId}
-                                    onChange={(event) => setRenameCategoryId(event.target.value)}
-                                    aria-label="Select category to rename"
-                                    style={{ width: "100%" }}
-                                >
-                                    <option value="">Select category to rename</option>
-                                    {categories.map((category) => (
-                                        <option key={category.id} value={category.id}>
-                                            {category.name}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                <input
-                                    type="text"
-                                    placeholder="New name"
-                                    value={renameCategoryName}
-                                    onChange={(event) => setRenameCategoryName(event.target.value)}
-                                    style={{ width: "100%", marginTop: 8 }}
-                                    aria-label="Rename category"
-                                />
-
-                                <button
-                                    type="button"
-                                    style={{ marginTop: 8, width: "100%" }}
-                                    onClick={handleRenameCategory}
-                                >
-                                    Rename
-                                </button>
-                            </div>
-                        </section>
-
-                        <section>
-                            <h3 style={{ marginBottom: 12 }}>Browse</h3>
+                    {categories.map((category) => (
+                        <div
+                            key={category.id}
+                            className="category-action-row"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setSelectedCategoryId(category.id)}
+                                className={`category-filter-button ${selectedCategoryId === category.id ? "category-filter-button-selected" : ""}`.trim()}
+                            >
+                                {category.name}
+                            </button>
 
                             <button
                                 type="button"
-                                onClick={() => setSelectedCategoryId("")}
-                                style={{
-                                    display: "block",
-                                    width: "100%",
-                                    marginBottom: 8,
-                                    padding: "10px 12px",
-                                    textAlign: "left",
-                                    borderRadius: 10,
-                                    border: selectedCategoryId === "" ? "2px solid #333" : "1px solid #ccc",
-                                    background: selectedCategoryId === "" ? "#f0f0f0" : "#fff",
-                                    cursor: "pointer",
-                                }}
+                                onClick={() => handleDeleteCategory(category.id)}
+                                aria-label={`Delete ${category.name}`}
+                                className="category-delete-button"
                             >
-                                All Categories
+                                X
                             </button>
-
-                            {categories.map((category) => (
-                                <div
-                                    key={category.id}
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                        marginBottom: 8,
-                                    }}
-                                >
-                                    <button
-                                        type="button"
-                                        onClick={() => setSelectedCategoryId(category.id)}
-                                        style={{
-                                            display: "block",
-                                            flex: 1,
-                                            marginBottom: 0,
-                                            padding: "10px 12px",
-                                            textAlign: "left",
-                                            borderRadius: 10,
-                                            border: selectedCategoryId === category.id ? "2px solid #333" : "1px solid #ccc",
-                                            background: selectedCategoryId === category.id ? "#f0f0f0" : "#fff",
-                                            cursor: "pointer",
-                                        }}
-                                    >
-                                        {category.name}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDeleteCategory(category.id)}
-                                        aria-label={`Delete ${category.name}`}
-                                        style={{
-                                            padding: "10px 12px",
-                                            borderRadius: 10,
-                                            border: "1px solid #ccc",
-                                            background: "#fff",
-                                            cursor: "pointer",
-                                        }}
-                                    >
-                                        X
-                                    </button>
-                                </div>
-                            ))}
-                        </section>
-                    </aside>
-
-                    <section
-                        style={{
-                            flex: 1,
-                            padding: 24,
-                            display: "flex",
-                            flexDirection: "column",
-                        }}
-                    >
-                        <div
-                            style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: 20,
-                            }}
-                        >
-                            <div>
-                                <h2 style={{ margin: 0 }}>
-                                    {selectedCategoryId
-                                        ? categories.find((category) => category.id === selectedCategoryId)?.name || "Entities"
-                                        : "All Entities"}
-                                </h2>
-                                <p style={{ margin: "6px 0 0" }}>
-                                    {filteredEntities.length} credential{filteredEntities.length === 1 ? "" : "s"}
-                                </p>
-                            </div>
-
-                            <button
-                                id="add-entity-button"
-                                className="action-button main-add-button"
-                                data-label="+"
-                                aria-label="Add Entity"
-                                onClick={openModal}
-                            />
                         </div>
+                    ))}
+                </div>
 
-                        {filteredEntities.length > 0 ? (
-                            <ul
-                                className="entity-list"
-                                style={{
-                                    display: "grid",
-                                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                                    gap: 16,
-                                    listStyle: "none",
-                                    padding: 0,
-                                    margin: 0,
-                                }}
-                            >
-                                {filteredEntities.map((entity, index) => {
-                                    const entityIndex = entities.findIndex((candidate, candidateIndex) => (
-                                        candidateIndex >= 0 &&
-                                        candidate.name === entity.name &&
-                                        candidate.username === entity.username &&
-                                        candidate.password === entity.password &&
-                                        JSON.stringify(candidate.categoryIds || []) === JSON.stringify(entity.categoryIds || [])
-                                    ));
+                <div className="main-entities-column">
+                    <h2 style={{ marginTop: 0, marginBottom: 16 }}>
+                        {selectedCategoryId
+                            ? categories.find((category) => category.id === selectedCategoryId)?.name || "Entities"
+                            : "Entities"}
+                    </h2>
 
-                                    const categoryNames = getCategoryNames(entity.categoryIds || []);
+                    {filteredEntities.length > 0 && (
+                        <ul className="entity-list">
+                            {filteredEntities.map((entity, index) => {
+                                const entityIndex = entities.findIndex((candidate, candidateIndex) => (
+                                    candidateIndex >= 0 &&
+                                    candidate.name === entity.name &&
+                                    candidate.username === entity.username &&
+                                    candidate.password === entity.password &&
+                                    JSON.stringify(candidate.categoryIds || []) === JSON.stringify(entity.categoryIds || [])
+                                ));
 
-                                    return (
-                                        <li
-                                            key={`${entity.name}-${entity.username}-${index}`}
-                                            className="entity-item"
-                                            style={{
-                                                border: "1px solid #e5e5e5",
-                                                borderRadius: 14,
-                                                padding: 16,
-                                                display: "flex",
-                                                flexDirection: "column",
-                                                alignItems: "center",
-                                                justifyContent: "center",
-                                                minHeight: 140,
-                                                background: "#fff",
-                                            }}
-                                        >
-                                            <button
-                                                type="button"
-                                                className="action-button entity-button"
-                                                data-label={entity.name}
-                                                aria-label={`${entity.name} (${entity.username})`}
-                                                title={`Username: ${entity.username}`}
-                                                onClick={() => openMfaModal(entityIndex)}
-                                            />
-                                            {categoryNames.length > 0 && (
-                                                <small style={{ marginTop: 10, textAlign: "center" }}>
-                                                    {categoryNames.join(", ")}
-                                                </small>
-                                            )}
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                        ) : (
-                            <div
-                                style={{
-                                    flex: 1,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    border: "1px dashed #ccc",
-                                    borderRadius: 14,
-                                    minHeight: 220,
-                                }}
-                            >
-                                <p style={{ margin: 0 }}>No credentials found for this view.</p>
-                            </div>
-                        )}
-                    </section>
+                                return (
+                                    <li
+                                        key={`${entity.name}-${entity.username}-${index}`}
+                                        className="entity-item"
+                                    >
+                                        <button
+                                            type="button"
+                                            className="action-button entity-button"
+                                            data-label={entity.name}
+                                            aria-label={`${entity.name} (${entity.username})`}
+                                            title={`Username: ${entity.username}`}
+                                            onClick={() => openMfaModal(entityIndex)}
+                                        />
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+
+                    <button
+                        id="add-entity-button"
+                        className="action-button main-add-button"
+                        data-label="+"
+                        aria-label="Add Entity"
+                        onClick={openModal}
+                    />
                 </div>
             </div>
 
