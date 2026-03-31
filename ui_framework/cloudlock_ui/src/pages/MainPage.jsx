@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useState, useContext } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
 import { AuthContext } from "../context/AuthContext";
@@ -53,12 +53,16 @@ function MainPage() {
     const [retrySave, setRetrySave] = useState(false);
     const { masterKey, token, logout } = useContext(AuthContext);
     const location = useLocation();
+    const navigate = useNavigate();
     const displayUsername = location.state?.username || "User";
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
     const [mfaModalStep, setMfaModalStep] = useState("mfa");
     const [selectedEntityIndex, setSelectedEntityIndex] = useState(null);
+
+    const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
     const [entities, setEntities] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -71,9 +75,6 @@ function MainPage() {
     const [newCategoryName, setNewCategoryName] = useState("");
     const [renameCategoryId, setRenameCategoryId] = useState("");
     const [renameCategoryName, setRenameCategoryName] = useState("");
-
-    const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
-    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
     const [formData, setFormData] = useState({
         name: "",
@@ -104,6 +105,11 @@ function MainPage() {
         formData.name.trim() &&
         formData.username.trim() &&
         formData.password.trim();
+
+    const isUpdateFormValid =
+        updateFormData.name.trim() &&
+        updateFormData.username.trim() &&
+        updateFormData.password.trim();
 
     const addPasswordStrength = getPasswordStrength(formData.password);
     const updatePasswordStrength = getPasswordStrength(updateFormData.password);
@@ -150,9 +156,9 @@ function MainPage() {
             categories: Array.isArray(data?.categories) ? data.categories : [],
             entities: Array.isArray(data?.entities)
                 ? data.entities.map((entity) => ({
-                    ...entity,
-                    categoryIds: entity.categoryIds || [],
-                }))
+                      ...entity,
+                      categoryIds: entity.categoryIds || [],
+                  }))
                 : [],
         };
     }
@@ -282,11 +288,11 @@ function MainPage() {
             return;
         }
 
-        const nextEntities = entities.map((entity, index) => (
+        const nextEntities = entities.map((entity, index) =>
             index === selectedEntityIndex
                 ? { ...updateFormData, categoryIds: updateFormData.categoryIds || [] }
                 : entity
-        ));
+        );
 
         setEntities(nextEntities);
         await handleSaveVault(nextEntities, categories);
@@ -574,6 +580,7 @@ function MainPage() {
         localStorage.removeItem("username");
         localStorage.removeItem("password");
         localStorage.removeItem("cloudlock_token");
+        navigate("/");
     }
 
     function openDeleteAccountModal() {
@@ -643,7 +650,7 @@ function MainPage() {
             localStorage.removeItem("username");
             localStorage.removeItem("password");
             localStorage.removeItem("cloudlock_token");
-            window.location.href = "/";
+            navigate("/");
         } catch (e) {
             setErrorMessage("Account deletion failed: " + (e?.message || e));
             setIsDeletingAccount(false);
@@ -684,7 +691,7 @@ function MainPage() {
                         animation: "spin 1s linear infinite",
                     }}
                 />
-                <div>Loading vault...</div>
+                <div>Loading vault.</div>
             </div>
         );
     }
@@ -692,90 +699,96 @@ function MainPage() {
     return (
         <div className="main-page">
             <header className="main-header">
-                <nav className="main-logout-nav">
-                    <div className="main-account-actions">
-                        <button
-                            type="button"
-                            className="home-action-button"
-                            data-label="LOGOUT"
-                            aria-label="Logout"
-                            onClick={clearStoredCredentials}
-                        />
-                        <button
-                            type="button"
-                            className="home-action-button delete-account-button"
-                            data-label="DELETE ACCOUNT"
-                            aria-label="Delete Account"
-                            onClick={openDeleteAccountModal}
-                            disabled={isPreviewMode || isDeletingAccount}
-                        />
-                    </div>
-                </nav>
-
-                <div className="main-title-group">
-                    <h1 className="main-title">Welcome {displayUsername}</h1>
-                    {isPreviewMode && (
-                        <div className="preview-message">
-                            Preview mode is enabled. Vault changes stay in local UI state only.
+                <div className="main-header-left">
+                    <nav className="main-logout-nav">
+                        <div className="main-account-actions">
+                            <button
+                                type="button"
+                                className="home-action-button"
+                                data-label="LOGOUT"
+                                aria-label="Logout"
+                                onClick={clearStoredCredentials}
+                            />
+                            <button
+                                type="button"
+                                className="home-action-button delete-account-button"
+                                data-label="DELETE ACCOUNT"
+                                aria-label="Delete Account"
+                                onClick={openDeleteAccountModal}
+                                disabled={isPreviewMode || isDeletingAccount}
+                            />
                         </div>
-                    )}
+                    </nav>
                 </div>
 
-                {errorMessage && (
-                    <div className="error-message" style={{ color: "red", margin: "8px 0" }}>
-                        {errorMessage}
-                        {retryLoad && (
-                            <button
-                                style={{ marginLeft: 8 }}
-                                onClick={() => {
-                                    setRetryLoad(false);
-                                    handleLoadVault();
-                                }}
-                            >
-                                Retry Load
-                            </button>
-                        )}
-                        {retrySave && (
-                            <button
-                                style={{ marginLeft: 8 }}
-                                onClick={() => {
-                                    setRetrySave(false);
-                                    handleSaveVault(entities, categories);
-                                }}
-                            >
-                                Retry Save
-                            </button>
+                <div className="main-header-center">
+                    <div className="main-title-group">
+                        <h1 className="main-title">Welcome {displayUsername}</h1>
+                        {isPreviewMode && (
+                            <div className="preview-message">
+                                Preview mode is enabled. Vault changes stay in local UI state only.
+                            </div>
                         )}
                     </div>
-                )}
+                </div>
 
-                <div className="main-search-area" style={{ marginTop: 12 }}>
-                    <input
-                        type="text"
-                        className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
-                        placeholder="Search entities"
-                        value={searchTerm}
-                        onChange={(event) => setSearchTerm(event.target.value)}
-                        aria-label="Search entities"
-                    />
+                <div className="main-header-right">
+                    <div className="main-search-area">
+                        <input
+                            type="text"
+                            className={`main-search-input ${query ? "main-search-input-open" : ""}`.trim()}
+                            placeholder="Search entities"
+                            value={searchTerm}
+                            onChange={(event) => setSearchTerm(event.target.value)}
+                            aria-label="Search entities"
+                        />
 
-                    {query && (
-                        <section className="search-results-section">
-                            {searchResults.length > 0 ? (
-                                <ul className="search-results-list">
-                                    {searchResults.map((entity, index) => (
-                                        <li key={`${entity.name}-${entity.username}-result-${index}`}>
-                                            {entity.name} ({entity.username})
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="search-results-empty">No matches found.</p>
-                            )}
-                        </section>
-                    )}
+                        {query && (
+                            <section className="search-results-panel">
+                                {searchResults.length > 0 ? (
+                                    <ul className="search-results-list">
+                                        {searchResults.map((entity, index) => (
+                                            <li key={`${entity.name}-${entity.username}-result-${index}`}>
+                                                {entity.name} ({entity.username})
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="search-results-empty">No matches found.</p>
+                                )}
+                            </section>
+                        )}
+                    </div>
                 </div>
             </header>
+
+            {errorMessage && (
+                <div className="error-message" style={{ color: "red", margin: "8px 0" }}>
+                    {errorMessage}
+                    {retryLoad && (
+                        <button
+                            style={{ marginLeft: 8 }}
+                            onClick={() => {
+                                setRetryLoad(false);
+                                handleLoadVault();
+                            }}
+                        >
+                            Retry Load
+                        </button>
+                    )}
+                    {retrySave && (
+                        <button
+                            style={{ marginLeft: 8 }}
+                            onClick={() => {
+                                setRetrySave(false);
+                                handleSaveVault(entities, categories);
+                            }}
+                        >
+                            Retry Save
+                        </button>
+                    )}
+                </div>
+            )}
 
             <div className="main-content">
                 <div className="main-categories-column">
@@ -848,10 +861,7 @@ function MainPage() {
                     </button>
 
                     {categories.map((category) => (
-                        <div
-                            key={category.id}
-                            className="category-action-row"
-                        >
+                        <div key={category.id} className="category-action-row">
                             <button
                                 type="button"
                                 onClick={() => setSelectedCategoryId(category.id)}
@@ -882,13 +892,13 @@ function MainPage() {
                     {filteredEntities.length > 0 && (
                         <ul className="entity-list">
                             {filteredEntities.map((entity, index) => {
-                                const entityIndex = entities.findIndex((candidate, candidateIndex) => (
-                                    candidateIndex >= 0 &&
+                                const entityIndex = entities.findIndex((candidate) =>
                                     candidate.name === entity.name &&
                                     candidate.username === entity.username &&
                                     candidate.password === entity.password &&
-                                    JSON.stringify(candidate.categoryIds || []) === JSON.stringify(entity.categoryIds || [])
-                                ));
+                                    JSON.stringify(candidate.categoryIds || []) ===
+                                        JSON.stringify(entity.categoryIds || [])
+                                );
 
                                 return (
                                     <li
@@ -1021,16 +1031,16 @@ function MainPage() {
                         <div className="entity-modal-actions">
                             <button
                                 type="submit"
-                                disabled={!isAddFormValid}
                                 className="action-button entity-modal-button"
-                                data-label="ADD"
-                                aria-label="Add"
+                                data-label="SAVE"
+                                aria-label="Save Entity"
+                                disabled={!isAddFormValid}
                             />
                             <button
                                 type="button"
                                 className="action-button entity-modal-button"
                                 data-label="CANCEL"
-                                aria-label="Cancel"
+                                aria-label="Cancel Add Entity"
                                 onClick={closeModal}
                             />
                         </div>
@@ -1039,41 +1049,26 @@ function MainPage() {
             )}
 
             {isMfaModalOpen && (
-                <div
-                    className="entity-modal-backdrop"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="MFA placeholder"
-                >
-                    <div className="entity-modal" style={{ position: "relative" }}>
-                        <button
-                            type="button"
-                            onClick={closeMfaModal}
-                            aria-label="Close entity modal"
-                            style={{
-                                position: "absolute",
-                                top: 12,
-                                right: 12,
-                                background: "transparent",
-                                border: "none",
-                                fontSize: 24,
-                                cursor: "pointer",
-                                lineHeight: 1,
-                            }}
-                        >
-                            ×
-                        </button>
-
+                <div className="entity-modal-backdrop" onClick={closeMfaModal}>
+                    <div className="entity-modal" onClick={(event) => event.stopPropagation()}>
                         {mfaModalStep === "mfa" && (
                             <>
-                                <h2>MFA Here</h2>
+                                <h2>MFA Required</h2>
+                                <p>MFA here</p>
                                 <div className="entity-modal-actions">
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
-                                        data-label="OK"
-                                        aria-label="OK"
+                                        data-label="CONTINUE"
+                                        aria-label="Continue after MFA"
                                         onClick={showMfaActions}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="action-button entity-modal-button"
+                                        data-label="CANCEL"
+                                        aria-label="Cancel"
+                                        onClick={closeMfaModal}
                                     />
                                 </div>
                             </>
@@ -1103,56 +1098,55 @@ function MainPage() {
                                                 type={showDetailsPassword ? "text" : "password"}
                                                 value={selectedEntity.password}
                                                 readOnly
+                                                aria-label="Entity password"
                                             />
                                             <button
                                                 type="button"
                                                 className="password-toggle"
-                                                onClick={() =>
-                                                    setShowDetailsPassword((prev) => !prev)
-                                                }
-                                                aria-label={
-                                                    showDetailsPassword
-                                                        ? "Hide password"
-                                                        : "Show password"
-                                                }
+                                                onClick={() => setShowDetailsPassword((previous) => !previous)}
+                                                aria-label={showDetailsPassword ? "Hide password" : "Show password"}
                                             >
                                                 <img
                                                     src={showDetailsPassword ? eyeClose : eyeOpen}
-                                                    alt={
-                                                        showDetailsPassword
-                                                            ? "Hide password"
-                                                            : "Show password"
-                                                    }
+                                                    alt={showDetailsPassword ? "Hide password" : "Show password"}
                                                     className="password-toggle-icon"
                                                 />
                                             </button>
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <strong>Categories:</strong>
+                                    {selectedEntity.categoryIds?.length > 0 && (
                                         <div>
-                                            {getCategoryNames(selectedEntity.categoryIds || []).length > 0
-                                                ? getCategoryNames(selectedEntity.categoryIds || []).join(", ")
-                                                : "None"}
+                                            <strong>Categories:</strong>
+                                            <div>{getCategoryNames(selectedEntity.categoryIds).join(", ")}</div>
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
 
-                                <div className="entity-modal-actions" style={{ marginTop: 24 }}>
+                                <div className="entity-modal-actions">
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="UPDATE"
-                                        aria-label="Update"
+                                        aria-label="Update Entity"
                                         onClick={openUpdateForm}
                                     />
                                     <button
                                         type="button"
                                         className="action-button entity-modal-button"
                                         data-label="DELETE"
-                                        aria-label="Delete"
+                                        aria-label="Delete Entity"
                                         onClick={openDeleteConfirmation}
+                                    />
+                                </div>
+
+                                <div className="entity-modal-actions">
+                                    <button
+                                        type="button"
+                                        className="action-button entity-modal-button"
+                                        data-label="CLOSE"
+                                        aria-label="Close"
+                                        onClick={closeMfaModal}
                                     />
                                 </div>
                             </>
@@ -1160,7 +1154,7 @@ function MainPage() {
 
                         {mfaModalStep === "confirm-delete" && (
                             <>
-                                <h2>Confirm Delete</h2>
+                                <h2>Delete Entity</h2>
                                 <p>Are you sure you want to delete {selectedEntityName}?</p>
                                 <div className="entity-modal-actions">
                                     <button
@@ -1182,120 +1176,117 @@ function MainPage() {
                         )}
 
                         {mfaModalStep === "update" && (
-                            <form onSubmit={handleUpdateEntity}>
+                            <>
                                 <h2>Update Entity</h2>
 
-                                <input
-                                    type="text"
-                                    name="name"
-                                    placeholder="Name"
-                                    value={updateFormData.name}
-                                    onChange={handleUpdateInputChange}
-                                    required
-                                />
-
-                                <input
-                                    type="text"
-                                    name="username"
-                                    placeholder="Username"
-                                    value={updateFormData.username}
-                                    onChange={handleUpdateInputChange}
-                                    required
-                                />
-
-                                <div className="category-selector" style={{ marginBottom: 12 }}>
-                                    <p><strong>Categories</strong></p>
-                                    {categories.length > 0 ? (
-                                        categories.map((category) => (
-                                            <label
-                                                key={category.id}
-                                                style={{ display: "block", marginBottom: 6 }}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={(updateFormData.categoryIds || []).includes(category.id)}
-                                                    onChange={(event) =>
-                                                        handleCategoryToggle(
-                                                            category.id,
-                                                            event.target.checked,
-                                                            true
-                                                        )
-                                                    }
-                                                />
-                                                {" "}{category.name}
-                                            </label>
-                                        ))
-                                    ) : (
-                                        <p>No categories yet.</p>
-                                    )}
-                                </div>
-
-                                <div className="password-field">
+                                <form onSubmit={handleUpdateEntity} style={{ width: "100%" }}>
                                     <input
-                                        type={showUpdatePassword ? "text" : "password"}
-                                        name="password"
-                                        placeholder="Password"
-                                        value={updateFormData.password}
+                                        type="text"
+                                        name="name"
+                                        placeholder="Name"
+                                        value={updateFormData.name}
                                         onChange={handleUpdateInputChange}
                                         required
                                     />
-                                    <button
-                                        type="button"
-                                        className="password-toggle"
-                                        onClick={() =>
-                                            setShowUpdatePassword((previous) => !previous)
-                                        }
-                                        aria-label={
-                                            showUpdatePassword ? "Hide password" : "Show password"
-                                        }
-                                    >
-                                        <img
-                                            src={showUpdatePassword ? eyeClose : eyeOpen}
-                                            alt={
-                                                showUpdatePassword ? "Hide password" : "Show password"
-                                            }
-                                            className="password-toggle-icon"
+
+                                    <input
+                                        type="text"
+                                        name="username"
+                                        placeholder="Username"
+                                        value={updateFormData.username}
+                                        onChange={handleUpdateInputChange}
+                                        required
+                                    />
+
+                                    <div className="category-selector" style={{ marginBottom: 12 }}>
+                                        <p><strong>Categories</strong></p>
+                                        {categories.length > 0 ? (
+                                            categories.map((category) => (
+                                                <label
+                                                    key={category.id}
+                                                    style={{ display: "block", marginBottom: 6 }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={(updateFormData.categoryIds || []).includes(category.id)}
+                                                        onChange={(event) =>
+                                                            handleCategoryToggle(
+                                                                category.id,
+                                                                event.target.checked,
+                                                                true
+                                                            )
+                                                        }
+                                                    />
+                                                    {" "}{category.name}
+                                                </label>
+                                            ))
+                                        ) : (
+                                            <p>No categories yet.</p>
+                                        )}
+                                    </div>
+
+                                    <div className="password-field">
+                                        <input
+                                            type={showUpdatePassword ? "text" : "password"}
+                                            name="password"
+                                            placeholder="Password"
+                                            value={updateFormData.password}
+                                            onChange={handleUpdateInputChange}
+                                            required
                                         />
-                                    </button>
-                                </div>
-
-                                {updateFormData.password && (
-                                    <p className="password-strength-text">
-                                        Password strength:
-                                        <span
-                                            className={`strength-${updatePasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}
+                                        <button
+                                            type="button"
+                                            className="password-toggle"
+                                            onClick={() => setShowUpdatePassword((previous) => !previous)}
+                                            aria-label={showUpdatePassword ? "Hide password" : "Show password"}
                                         >
-                                            {" "}{updatePasswordStrength.label}
-                                        </span>
-                                    </p>
-                                )}
+                                            <img
+                                                src={showUpdatePassword ? eyeClose : eyeOpen}
+                                                alt={showUpdatePassword ? "Hide password" : "Show password"}
+                                                className="password-toggle-icon"
+                                            />
+                                        </button>
+                                    </div>
 
-                                <div className="generate-button-container">
-                                    <button
-                                        type="button"
-                                        className="action-button"
-                                        onClick={handleGenerateUpdatePassword}
-                                    >
-                                        GENERATE?
-                                    </button>
-                                </div>
+                                    {updateFormData.password && (
+                                        <p className="password-strength-text">
+                                            Password strength:
+                                            <span
+                                                className={`strength-${updatePasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}
+                                            >
+                                                {" "}{updatePasswordStrength.label}
+                                            </span>
+                                        </p>
+                                    )}
 
-                                <div className="entity-modal-actions">
-                                    <button
-                                        type="submit"
-                                        className="action-button entity-modal-button"
-                                        data-label="UPDATE"
-                                        aria-label="Update"
-                                    />
-                                    <button
-                                        type="button"
-                                        className="action-button entity-modal-button"
-                                        data-label="CANCEL"
-                                        aria-label="Cancel"
-                                        onClick={closeMfaModal}
-                                    />
-                                </div>
-                            </form>
+                                    <div className="generate-button-container">
+                                        <button
+                                            type="button"
+                                            className="action-button"
+                                            onClick={handleGenerateUpdatePassword}
+                                        >
+                                            GENERATE?
+                                        </button>
+                                    </div>
+
+                                    <div className="entity-modal-actions">
+                                        <button
+                                            type="submit"
+                                            className="action-button entity-modal-button"
+                                            data-label="SAVE"
+                                            aria-label="Save Updated Entity"
+                                            disabled={!isUpdateFormValid}
+                                        />
+                                        <button
+                                            type="button"
+                                            className="action-button entity-modal-button"
+                                            data-label="CANCEL"
+                                            aria-label="Cancel Update"
+                                            onClick={closeMfaModal}
+                                        />
+                                    </div>
+                                </form>
+                            </>
                         )}
                     </div>
                 </div>
