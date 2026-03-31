@@ -87,3 +87,9 @@ export async function logout() {
   setAccessToken(null);
   return response;
 }
+
+export async function deleteAccount() {
+  const response = await apiService.post('/auth/delete-account', {});
+  setAccessToken(null);
+  return response;
+}

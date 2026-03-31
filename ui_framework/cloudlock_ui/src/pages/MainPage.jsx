@@ -18,7 +18,7 @@ import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
 import { AuthContext } from "../context/AuthContext";
 import { saveVault, getVault } from "../api/vaultApi";
-import { logout as apiLogout } from "../api/authApi";
+import { logout as apiLogout, deleteAccount as apiDeleteAccount } from "../api/authApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
 import { generateStrongPassword } from "../crypto/passwordGenerator";
@@ -71,6 +71,9 @@ function MainPage() {
     const [newCategoryName, setNewCategoryName] = useState("");
     const [renameCategoryId, setRenameCategoryId] = useState("");
     const [renameCategoryName, setRenameCategoryName] = useState("");
+
+    const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
     const [formData, setFormData] = useState({
         name: "",
@@ -573,6 +576,80 @@ function MainPage() {
         localStorage.removeItem("cloudlock_token");
     }
 
+    function openDeleteAccountModal() {
+        setIsDeleteAccountModalOpen(true);
+    }
+
+    function closeDeleteAccountModal() {
+        if (isDeletingAccount) {
+            return;
+        }
+
+        setIsDeleteAccountModalOpen(false);
+    }
+
+    async function handleDeleteAccount() {
+        if (isPreviewMode) {
+            setErrorMessage("Delete account is disabled in preview mode.");
+            setIsDeleteAccountModalOpen(false);
+            return;
+        }
+
+        setIsDeletingAccount(true);
+        setErrorMessage("");
+
+        try {
+            const response = await apiDeleteAccount();
+
+            if (
+                response &&
+                response.status &&
+                [401, 403, 404, 409, 500, "timeout", "error"].includes(response.status)
+            ) {
+                let msg = "";
+
+                switch (response.status) {
+                    case 401:
+                        msg = "Session expired. Please log in again.";
+                        break;
+                    case 403:
+                        msg = "Access denied. You do not have permission.";
+                        break;
+                    case 404:
+                        msg = "Account was not found.";
+                        break;
+                    case 409:
+                        msg = "Conflict error. Please retry.";
+                        break;
+                    case 500:
+                        msg = "Server error. Please try again later.";
+                        break;
+                    case "timeout":
+                        msg = "Request timed out. Please retry.";
+                        break;
+                    case "error":
+                        msg = response.error || "Unknown error.";
+                        break;
+                    default:
+                        msg = "Unknown error.";
+                }
+
+                setErrorMessage(msg);
+                setIsDeletingAccount(false);
+                return;
+            }
+
+            logout();
+            localStorage.removeItem("username");
+            localStorage.removeItem("password");
+            localStorage.removeItem("cloudlock_token");
+            window.location.href = "/";
+        } catch (e) {
+            setErrorMessage("Account deletion failed: " + (e?.message || e));
+            setIsDeletingAccount(false);
+        }
+    }
+
     useEffect(() => {
         if (masterKey) {
             handleLoadVault();
@@ -616,13 +693,23 @@ function MainPage() {
         <div className="main-page">
             <header className="main-header">
                 <nav className="main-logout-nav">
-                    <ul>
-                        <li>
-                            <Link to="/" onClick={clearStoredCredentials}>
-                                Logout
-                            </Link>
-                        </li>
-                    </ul>
+                    <div className="main-account-actions">
+                        <button
+                            type="button"
+                            className="home-action-button"
+                            data-label="LOGOUT"
+                            aria-label="Logout"
+                            onClick={clearStoredCredentials}
+                        />
+                        <button
+                            type="button"
+                            className="home-action-button delete-account-button"
+                            data-label="DELETE ACCOUNT"
+                            aria-label="Delete Account"
+                            onClick={openDeleteAccountModal}
+                            disabled={isPreviewMode || isDeletingAccount}
+                        />
+                    </div>
                 </nav>
 
                 <div className="main-title-group">
@@ -1210,6 +1297,38 @@ function MainPage() {
                                 </div>
                             </form>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {isDeleteAccountModalOpen && (
+                <div className="entity-modal-backdrop" onClick={closeDeleteAccountModal}>
+                    <div className="entity-modal" onClick={(event) => event.stopPropagation()}>
+                        <h2>Delete Account</h2>
+                        <p>MFA here</p>
+                        <p>
+                            This will permanently delete your account, vault data, sessions,
+                            and registered devices.
+                        </p>
+
+                        <div className="entity-modal-actions">
+                            <button
+                                type="button"
+                                className="action-button entity-modal-button"
+                                data-label={isDeletingAccount ? "DELETING..." : "CONTINUE"}
+                                aria-label="Continue Delete Account"
+                                onClick={handleDeleteAccount}
+                                disabled={isDeletingAccount}
+                            />
+                            <button
+                                type="button"
+                                className="action-button entity-modal-button"
+                                data-label="CANCEL"
+                                aria-label="Cancel Delete Account"
+                                onClick={closeDeleteAccountModal}
+                                disabled={isDeletingAccount}
+                            />
+                        </div>
                     </div>
                 </div>
             )}

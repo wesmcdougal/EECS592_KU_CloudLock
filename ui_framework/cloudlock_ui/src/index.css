@@ -388,6 +388,16 @@ button:disabled {
   margin: 0;
 }
 
+.main-account-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.delete-account-button {
+  width: 170px;
+}
+
 .main-title-group {
   position: absolute;
   left: 50%;
