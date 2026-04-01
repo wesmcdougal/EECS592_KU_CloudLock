@@ -18,7 +18,9 @@ function App() {
         <Route
           path="/main"
           element={(
+            <ProtectedRoute>
               <MainPage />
+            </ProtectedRoute>
           )}
         ></Route>
         <Route path="/recovery" element={<RecoveryPage />}></Route>
