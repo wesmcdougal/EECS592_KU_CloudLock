@@ -1,7 +1,12 @@
+
 import LoginForm from "../components/LoginForm";
 import ActionButton from "../components/ActionButton";
+import { useState } from "react";
+import OfflineUnlockModal from "../components/OfflineUnlockModal";
+
 
 function LoginPage() {
+    const [showOfflineModal, setShowOfflineModal] = useState(false);
 
     return (
         <>
@@ -27,7 +32,19 @@ function LoginPage() {
                         to="/"
                     />
                 </div>
+                <div className="container">
+                    <button
+                        className="action-button home-action-button"
+                        style={{ marginTop: 0 }}
+                        onClick={() => setShowOfflineModal(true)}
+                    >
+                        OFFLINE UNLOCK
+                    </button>
+                </div>
             </div>
+            {showOfflineModal && (
+                <OfflineUnlockModal onClose={() => setShowOfflineModal(false)} />
+            )}
         </>
     );
 }

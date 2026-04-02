@@ -21,6 +21,8 @@ import { saveVault, getVault } from "../api/vaultApi";
 import { logout as apiLogout, deleteAccount as apiDeleteAccount } from "../api/authApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
+import { cacheEncryptedVault, loadCachedEncryptedVault } from "../crypto/storageFormat";
+
 import { generateStrongPassword } from "../crypto/passwordGenerator";
 import { getPasswordStrength } from "../crypto/passwordStrength";
 
@@ -173,6 +175,46 @@ function MainPage() {
             .map((category) => category.name);
     }
 
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    // Listen for online/offline events
+    useEffect(() => {
+        function handleOnline() {
+            setIsOnline(true);
+            processQueuedVaultOps();
+        }
+        function handleOffline() {
+            setIsOnline(false);
+        }
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+        // eslint-disable-next-line
+    }, []);
+
+    // Process queued vault operations when back online
+    async function processQueuedVaultOps() {
+        if (!masterKey) return;
+        const queue = loadVaultOpsQueue();
+        if (!queue.length) return;
+        let currentEntities = [...entities];
+        for (const op of queue) {
+            if (op.type === 'add') {
+                currentEntities.push(op.entity);
+            } else if (op.type === 'update') {
+                currentEntities[op.index] = op.entity;
+            } else if (op.type === 'delete') {
+                currentEntities.splice(op.index, 1);
+            }
+        }
+        await handleSaveVault(currentEntities);
+        clearVaultOpsQueue();
+        setEntities(currentEntities);
+    }
+
     function openModal() {
         setIsModalOpen(true);
     }
@@ -295,7 +337,11 @@ function MainPage() {
         );
 
         setEntities(nextEntities);
-        await handleSaveVault(nextEntities, categories);
+        if (isOnline) {
+            await handleSaveVault(nextEntities);
+        } else {
+            queueVaultOperation({ type: 'update', index: selectedEntityIndex, entity: updateFormData });
+        }
         closeMfaModal();
     }
 
@@ -306,12 +352,38 @@ function MainPage() {
 
         const nextEntities = entities.filter((_, index) => index !== selectedEntityIndex);
         setEntities(nextEntities);
-        await handleSaveVault(nextEntities, categories);
+        if (isOnline) {
+            await handleSaveVault(nextEntities);
+        } else {
+            queueVaultOperation({ type: 'delete', index: selectedEntityIndex });
+        }
         closeMfaModal();
     }
 
     function openDeleteConfirmation() {
         setMfaModalStep("confirm-delete");
+    }
+
+    function handleInputChange(event) {
+        const { name, value } = event.target;
+        setFormData((previous) => ({
+            ...previous,
+            [name]: value,
+        }));
+    }
+
+    async function handleAddEntity(event) {
+        event.preventDefault();
+        if (!formData.name || !formData.username || !formData.password) {
+            return;
+        }
+        const nextEntities = [...entities, formData];
+        if (isOnline) {
+            await handleSaveVault(nextEntities);
+        } else {
+            queueVaultOperation({ type: 'add', entity: formData });
+        }
+        closeModal();
     }
 
     function handleGenerateAddPassword() {
@@ -446,6 +518,8 @@ function MainPage() {
 
             const envelope = await envelopeEncrypt(vaultPayload, masterKey);
             const response = await saveVault(envelope);
+            // Cache encrypted envelope locally after successful save
+            cacheEncryptedVault(envelope);
             setShowSpinner(false);
 
             if (
@@ -501,14 +575,26 @@ function MainPage() {
         setShowSpinner(true);
 
         try {
-            const envelope = await getVault();
+            let envelope;
+            let online = true;
+            try {
+                envelope = await getVault();
+            } catch (err) {
+                online = false;
+            }
             setShowSpinner(false);
-
-            if (
-                envelope &&
-                envelope.status &&
-                [401, 403, 404, 409, 500, "timeout", "error"].includes(envelope.status)
-            ) {
+            if (!online || !envelope) {
+                // Offline or failed to fetch: try local cache
+                envelope = loadCachedEncryptedVault();
+                if (!envelope) {
+                    setEntities([]);
+                    setErrorMessage("No cached vault available offline.");
+                    setRetryLoad(false);
+                    setLoading(false);
+                    return;
+                }
+            }
+            if (envelope && envelope.status && [401,403,404,409,500,'timeout','error'].includes(envelope.status)) {
                 let msg = "";
 
                 switch (envelope.status) {
@@ -546,6 +632,10 @@ function MainPage() {
                 setEntities([]);
                 setRetryLoad(true);
             } else if (envelope && envelope.encryptedData && envelope.encryptedDEK) {
+                // Cache envelope after successful online load
+                if (online) cacheEncryptedVault(envelope);
+                const data = await envelopeDecrypt(envelope, masterKey);
+                setEntities(data);
                 const decrypted = await envelopeDecrypt(envelope, masterKey);
                 const normalized = normalizeVaultData(decrypted);
                 setCategories(normalized.categories);
@@ -578,7 +668,6 @@ function MainPage() {
         apiLogout().catch(() => null);
         logout();
         localStorage.removeItem("username");
-        localStorage.removeItem("password");
         localStorage.removeItem("cloudlock_token");
         navigate("/");
     }
@@ -759,6 +848,9 @@ function MainPage() {
                             </section>
                         )}
                     </div>
+                </div>
+                <div className="main-status-bar" style={{ margin: '8px 0', color: isOnline ? 'green' : 'orange', fontWeight: 500 }}>
+                    {isOnline ? 'Online' : 'Offline'}
                 </div>
             </header>
 
