@@ -376,22 +376,50 @@ button:disabled {
 }
 
 .main-header {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   width: 100%;
-  min-height: 72px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  column-gap: 24px;
+  min-height: 96px;
+}
+
+.main-header-left {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.main-header-center {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.main-header-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-start;
+  min-width: 0;
 }
 
 .main-logout-nav ul {
   margin: 0;
 }
 
+.main-account-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.delete-account-button {
+  width: 170px;
+}
+
 .main-title-group {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -426,19 +454,93 @@ button:disabled {
 .main-search-area {
   position: relative;
   width: min(40vw, 320px);
-  margin-right: 20px;
+  margin-top: 8px;
+  margin-right: 8px;
 }
 
 .main-content {
   flex: 1;
-  position: relative;
+  width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  flex-direction: row;
   justify-content: center;
+  align-items: flex-start;
+  gap: 48px;
   overflow-y: auto;
   padding-top: 24px;
   padding-bottom: 84px;
+  box-sizing: border-box;
+}
+
+.main-categories-column {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.main-entities-column {
+  width: 420px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.category-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.category-filter-button {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.category-filter-button-selected {
+  border: 2px solid #333;
+  background: #f0f0f0;
+}
+
+.category-delete-button {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.category-form-input,
+.category-form-select,
+.category-form-button {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+
+.main-entities-column .entity-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+  margin-bottom: 12px;
+  padding: 0;
 }
 
 .main-add-button {
