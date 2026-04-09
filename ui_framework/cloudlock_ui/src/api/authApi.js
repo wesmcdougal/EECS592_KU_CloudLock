@@ -9,6 +9,7 @@
  * - Logout API request dispatch
  *
  * Revision History:
+ * - Wesley McDougal - 09APR2026 - Improved MFA verification flow, clarified error reporting, and updated integration with WebAuthn and TOTP endpoints.
  * - Wesley McDougal - 29MAR2026 - Added MFA verification API integration
  */
 
@@ -30,6 +31,7 @@ export async function signup({
   username,
   authImageId = 'img_001',
   mfaEnrollment = null,
+  proposedUserId = null,
 }) {
   const emailLower = email.toLowerCase();
   const [emailLookup, usernameLookup, authVerifier] = await Promise.all([
@@ -39,11 +41,12 @@ export async function signup({
   ]);
 
   return apiService.post('/auth/register', {
-    email_lookup:    emailLookup,
-    username_lookup: usernameLookup,
-    auth_verifier:   authVerifier,
-    auth_image_id:   authImageId,
-    mfa_enrollment:  mfaEnrollment,
+    email_lookup:      emailLookup,
+    username_lookup:   usernameLookup,
+    auth_verifier:     authVerifier,
+    auth_image_id:     authImageId,
+    mfa_enrollment:    mfaEnrollment,
+    proposed_user_id:  proposedUserId || undefined,
   });
 }
 
@@ -82,14 +85,41 @@ export async function verifyLoginMfa({ challengeToken, method, totpCode = null, 
   return response;
 }
 
+export async function verifyImageAuth({ imageChallengeToken, authImageHash }) {
+  const response = await apiService.post('/auth/login/image/verify', {
+    image_challenge_token: imageChallengeToken,
+    auth_image_hash: authImageHash,
+  });
+  if (response.access_token) setAccessToken(response.access_token);
+  return response;
+}
+
 export async function logout() {
   const response = await apiService.post('/auth/logout', {});
   setAccessToken(null);
   return response;
 }
 
-export async function deleteAccount() {
-  const response = await apiService.post('/auth/delete-account', {});
+export async function deleteAccount({
+  email,
+  password,
+  method,
+  totpCode = null,
+  deviceId = null,
+}) {
+  const emailLower = email.toLowerCase();
+  const [emailLookup, authVerifier] = await Promise.all([
+    sha256hex(emailLower),
+    deriveAuthVerifier(password, emailLower),
+  ]);
+
+  const response = await apiService.post('/auth/delete-account', {
+    email_lookup: emailLookup,
+    auth_verifier: authVerifier,
+    method,
+    totp_code: totpCode,
+    device_id: deviceId,
+  });
   setAccessToken(null);
   return response;
 }
