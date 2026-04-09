@@ -9,6 +9,7 @@
  * - Navigation to protected main page after authentication
  *
  * Revision History:
+ * - Wesley McDougal - 09APR2026 - Enhanced MFA modal logic, added fallback for WebAuthn on Android, improved error messages, and clarified login flow for biometric and TOTP.
  * - Wesley McDougal - 29MAR2026 - Added MFA modal and WebAuthn/TOTP verification flow
  */
 
@@ -16,17 +17,43 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
-import { login, verifyLoginMfa } from "../api/authApi";
+import { login, verifyLoginMfa, verifyImageAuth } from "../api/authApi";
 import { getWebAuthnMfaChallenge, getWebAuthnAssertion } from "../api/webauthnApi";
 import { deriveKey } from "../crypto/keyDerivation";
+import { clearCachedEncryptedVault } from "../crypto/storageFormat";
 import { AuthContext } from "../context/AuthContext";
+import FinalAuthStep from "./FinalAuthStep";
+
+/**
+ * Generate a device fingerprint hash based on browser/device characteristics.
+ * Includes user agent, screen info, timezone, and language for uniqueness.
+ */
+function generateDeviceFingerprint() {
+  const fingerprint = {
+    userAgent: navigator.userAgent,
+    screenResolution: `${window.screen.width}x${window.screen.height}`,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    language: navigator.language,
+    platform: navigator.platform,
+  };
+  
+  // Simple hash of the fingerprint data for storage
+  const stringified = JSON.stringify(fingerprint);
+  let hash = 0;
+  for (let i = 0; i < stringified.length; i++) {
+    const char = stringified.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(16);
+}
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const { setMasterKey, setToken } = useContext(AuthContext);
 
-  const [email, setEmail] = useState(location.state?.email || "");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [mfaMessage, setMfaMessage] = useState("");
@@ -35,6 +62,9 @@ export default function Login() {
   const [pendingMfa, setPendingMfa] = useState(null);
   const [totpCode, setTotpCode] = useState("");
   const [isMfaVerifying, setIsMfaVerifying] = useState(false);
+  const [pendingImageAuth, setPendingImageAuth] = useState(null); // { imageChallengeToken }
+  const [isImageVerifying, setIsImageVerifying] = useState(false);
+  const [imageMfaMessage, setImageMfaMessage] = useState("");
   const timeoutsRef = useRef([]);
 
   const signupMessage =
@@ -44,6 +74,10 @@ export default function Login() {
   const isFormValid = email.trim() && password.trim();
 
   useEffect(() => {
+    // Always start with empty credentials when entering the login screen.
+    setEmail("");
+    setPassword("");
+
     return () => {
       timeoutsRef.current.forEach(clearTimeout);
     };
@@ -56,12 +90,17 @@ export default function Login() {
 
   async function completeSuccessfulLogin(accessToken) {
     const masterKey = await deriveKey(password, email.trim().toLowerCase());
+    // Prevent stale cached envelope from a different account/key from causing
+    // an OperationError on first vault load after login.
+    clearCachedEncryptedVault();
     setMasterKey(masterKey);
     setToken(accessToken);
     setSubmitButtonState("validate");
+    const resolvedUsername = location.state?.username || localStorage.getItem("cloudlock_username") || "User";
+    localStorage.setItem("cloudlock_username", resolvedUsername);
     navigate("/main", {
       state: {
-        username: location.state?.username || email.trim(),
+        username: resolvedUsername,
       },
     });
   }
@@ -74,6 +113,11 @@ export default function Login() {
       return;
     }
 
+    if (!email.trim().includes("@")) {
+      setMessage("Please log in with your email address. Username-only login is not supported.");
+      return;
+    }
+
     setMessage("");
     setSubmitButtonState("onclic");
 
@@ -81,7 +125,7 @@ export default function Login() {
       const response = await login({
         email: email.trim(),
         password,
-        deviceFingerprint: 'browser_test',
+        deviceFingerprint: generateDeviceFingerprint(),
       });
 
       if (response?.requires_mfa && response?.mfa_challenge_token) {
@@ -91,6 +135,12 @@ export default function Login() {
         });
         setSubmitButtonState("");
         setMfaMessage("MFA verification required.");
+        return;
+      }
+
+      if (response?.requires_image_auth && response?.image_challenge_token) {
+        setPendingImageAuth({ imageChallengeToken: response.image_challenge_token });
+        setSubmitButtonState("");
         return;
       }
 
@@ -121,7 +171,7 @@ export default function Login() {
         // Use WebAuthn assertion for biometric
         try {
           const challengeResponse = await getWebAuthnMfaChallenge(pendingMfa.challengeToken);
-          response = await getWebAuthnAssertion(challengeResponse.challenge, challengeResponse.mfa_challenge_token);
+          response = await getWebAuthnAssertion(challengeResponse);
         } catch (webauthnError) {
           setMfaMessage("Biometric verification failed: " + (webauthnError.message || webauthnError));
           setIsMfaVerifying(false);
@@ -135,6 +185,13 @@ export default function Login() {
           totpCode: method === "totp" ? totpCode.trim() : null,
           deviceId: null,
         });
+      }
+
+      if (response?.requires_image_auth && response?.image_challenge_token) {
+        setPendingMfa(null);
+        setTotpCode("");
+        setPendingImageAuth({ imageChallengeToken: response.image_challenge_token });
+        return;
       }
 
       if (response?.access_token) {
@@ -152,6 +209,28 @@ export default function Login() {
     }
   }
 
+  async function handleImageAuthConfirm(authImageHash) {
+    if (!pendingImageAuth?.imageChallengeToken) return;
+    setIsImageVerifying(true);
+    setImageMfaMessage("");
+    try {
+      const response = await verifyImageAuth({
+        imageChallengeToken: pendingImageAuth.imageChallengeToken,
+        authImageHash,
+      });
+      if (response?.access_token) {
+        setPendingImageAuth(null);
+        await completeSuccessfulLogin(response.access_token);
+        return;
+      }
+      setImageMfaMessage("Authentication failed. Please try again.");
+    } catch (err) {
+      setImageMfaMessage("Authentication error: " + (err?.message || err));
+    } finally {
+      setIsImageVerifying(false);
+    }
+  }
+
 
   return (
     <form onSubmit={handleLogin}>
@@ -165,6 +244,7 @@ export default function Login() {
         <input
           type="email"
           placeholder="Email"
+          autoComplete="off"
           value={email}
           onChange={e => setEmail(e.target.value)}
         />
@@ -172,6 +252,7 @@ export default function Login() {
           <input
             type={showPassword ? "text" : "password"}
             placeholder="Password"
+            autoComplete="new-password"
             value={password}
             onChange={e => setPassword(e.target.value)}
           />
@@ -252,6 +333,18 @@ export default function Login() {
                 setMfaMessage("");
                 setTotpCode("");
               }}
+            />
+          </div>
+        </div>
+      )}
+      {pendingImageAuth && (
+        <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="Final authentication">
+          <div className="entity-modal">
+            {imageMfaMessage && <p className="error-message">{imageMfaMessage}</p>}
+            <FinalAuthStep
+              onConfirm={handleImageAuthConfirm}
+              onCancel={() => { setPendingImageAuth(null); setImageMfaMessage(""); }}
+              isLoading={isImageVerifying}
             />
           </div>
         </div>

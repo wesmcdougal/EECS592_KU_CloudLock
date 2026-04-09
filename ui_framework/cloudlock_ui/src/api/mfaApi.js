@@ -8,6 +8,7 @@
  * - Revoking biometric devices by identifier
  *
  * Revision History:
+ * - Wesley McDougal - 09APR2026 - Improved device registration API integration, added error handling for MFA device actions, and clarified API usage for biometric and TOTP.
  * - Wesley McDougal - 29MAR2026 - Added MFA status/preference/device API wrappers
  */
 
@@ -28,6 +29,20 @@ export async function registerBiometricDevice({ deviceId, label }) {
   return post('/mfa/devices/biometric', {
     device_id: deviceId,
     label,
+  });
+}
+
+export async function startTotpSetup({ userId, accountName = null }) {
+  return post('/mfa/totp/setup/start', {
+    user_id: userId,
+    account_name: accountName,
+  });
+}
+
+export async function verifyTotpSetup({ setupToken, totpCode }) {
+  return post('/mfa/totp/setup/verify', {
+    setup_token: setupToken,
+    totp_code: totpCode,
   });
 }
 

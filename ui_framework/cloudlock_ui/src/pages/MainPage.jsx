@@ -9,6 +9,7 @@
  * - Providing local preview-mode data in development bypass mode
  *
  * Revision History:
+ * - Wesley McDougal - 09APR2026 - Refactored layout for mobile responsiveness, fixed header overlap, and improved WebAuthn-related UI feedback.
  * - Wesley McDougal - 29MAR2026 - Added local preview mode and header message placement updates
  */
 
@@ -19,14 +20,22 @@ import eyeClose from "../assets/eyeclose.png";
 import { AuthContext } from "../context/AuthContext";
 import { saveVault, getVault } from "../api/vaultApi";
 import { logout as apiLogout, deleteAccount as apiDeleteAccount } from "../api/authApi";
+import { getMfaStatus } from "../api/mfaApi";
 import { envelopeEncrypt } from "../crypto/envelopeEncrypt";
 import { envelopeDecrypt } from "../crypto/envelopeDecrypt";
-import { cacheEncryptedVault, loadCachedEncryptedVault } from "../crypto/storageFormat";
+import {
+    cacheEncryptedVault,
+    loadCachedEncryptedVault,
+    queueVaultOperation,
+    loadVaultOpsQueue,
+    clearVaultOpsQueue,
+} from "../crypto/storageFormat";
 
 import { generateStrongPassword } from "../crypto/passwordGenerator";
 import { getPasswordStrength } from "../crypto/passwordStrength";
 
 const MAX_CATEGORIES = 5;
+const UNASSIGNED_CATEGORY_NAME = "Unassigned";
 
 const previewVault = {
     categories: [
@@ -56,7 +65,8 @@ function MainPage() {
     const { masterKey, token, logout } = useContext(AuthContext);
     const location = useLocation();
     const navigate = useNavigate();
-    const displayUsername = location.state?.username || "User";
+    const displayUsername = location.state?.username || localStorage.getItem("cloudlock_username") || "User";
+    const welcomeUsername = String(displayUsername).split("@")[0] || "User";
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isMfaModalOpen, setIsMfaModalOpen] = useState(false);
@@ -65,6 +75,14 @@ function MainPage() {
 
     const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+    const [deleteAccountMethods, setDeleteAccountMethods] = useState([]);
+    const [deleteForm, setDeleteForm] = useState({
+        email: "",
+        password: "",
+        method: "totp",
+        totpCode: "",
+        deviceId: "",
+    });
 
     const [entities, setEntities] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -74,16 +92,7 @@ function MainPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedCategoryId, setSelectedCategoryId] = useState("");
 
-    const [newCategoryName, setNewCategoryName] = useState("");
-    const [renameCategoryId, setRenameCategoryId] = useState("");
-    const [renameCategoryName, setRenameCategoryName] = useState("");
-
-    const [formData, setFormData] = useState({
-        name: "",
-        username: "",
-        password: "",
-        categoryIds: [],
-    });
+    const [activeCategoryMenuId, setActiveCategoryMenuId] = useState("");
 
     const [updateFormData, setUpdateFormData] = useState({
         name: "",
@@ -92,9 +101,19 @@ function MainPage() {
         categoryIds: [],
     });
 
-    const [showAddPassword, setShowAddPassword] = useState(false);
     const [showUpdatePassword, setShowUpdatePassword] = useState(false);
     const [showDetailsPassword, setShowDetailsPassword] = useState(false);
+    const [tableVisiblePasswords, setTableVisiblePasswords] = useState({});
+    const [departmentName, setDepartmentName] = useState("");
+    const [departmentRows, setDepartmentRows] = useState([
+        { rowId: 1, personName: "", username: "", password: "" },
+    ]);
+    const [departmentVisiblePasswords, setDepartmentVisiblePasswords] = useState({});
+
+    const [isAddEntryModalOpen, setIsAddEntryModalOpen] = useState(false);
+    const [addEntryTargetCategoryId, setAddEntryTargetCategoryId] = useState("");
+    const [addEntryRows, setAddEntryRows] = useState([{ rowId: 1, personName: "", username: "", password: "" }]);
+    const [addEntryVisiblePasswords, setAddEntryVisiblePasswords] = useState({});
 
     const isPreviewMode =
         import.meta.env.DEV &&
@@ -103,18 +122,15 @@ function MainPage() {
 
     const query = searchTerm.trim().toLowerCase();
 
-    const isAddFormValid =
-        formData.name.trim() &&
-        formData.username.trim() &&
-        formData.password.trim();
-
     const isUpdateFormValid =
         updateFormData.name.trim() &&
         updateFormData.username.trim() &&
         updateFormData.password.trim();
-
-    const addPasswordStrength = getPasswordStrength(formData.password);
     const updatePasswordStrength = getPasswordStrength(updateFormData.password);
+
+    const selectedCategory = selectedCategoryId
+        ? categories.find((category) => category.id === selectedCategoryId) || null
+        : null;
 
     const filteredEntities = entities.filter((entity) => {
         const matchesSearch =
@@ -122,14 +138,43 @@ function MainPage() {
             entity.name.toLowerCase().includes(query) ||
             entity.username.toLowerCase().includes(query);
 
+        const entityCategoryRefs = entity.categoryIds || [];
         const matchesCategory =
             !selectedCategoryId ||
-            (entity.categoryIds || []).includes(selectedCategoryId);
+            entityCategoryRefs.includes(selectedCategoryId) ||
+            (selectedCategory?.name
+                ? entityCategoryRefs.includes(selectedCategory.name)
+                : false);
 
         return matchesSearch && matchesCategory;
     });
 
-    const searchResults = query ? filteredEntities : [];
+    const searchResults = query
+        ? entities.filter(
+              (entity) =>
+                  entity.name.toLowerCase().includes(query) ||
+                  entity.username.toLowerCase().includes(query)
+          )
+        : [];
+
+    function getEntityIndex(entity) {
+        return entities.findIndex((candidate) =>
+            candidate.name === entity.name &&
+            candidate.username === entity.username &&
+            candidate.password === entity.password &&
+            JSON.stringify(candidate.categoryIds || []) ===
+                JSON.stringify(entity.categoryIds || [])
+        );
+    }
+
+    function handleSearchResultClick(entity) {
+        const firstMatchingCategoryId = (entity.categoryIds || []).find((categoryId) =>
+            categories.some((category) => category.id === categoryId)
+        );
+
+        setSelectedCategoryId(firstMatchingCategoryId || "");
+        setSearchTerm("");
+    }
 
     const selectedEntityName =
         selectedEntityIndex !== null
@@ -138,6 +183,35 @@ function MainPage() {
 
     const selectedEntity =
         selectedEntityIndex !== null ? entities[selectedEntityIndex] : null;
+
+    const selectedCategoryName = selectedCategoryId
+        ? categories.find((category) => category.id === selectedCategoryId)?.name || ""
+        : "";
+
+    const showSelectedCategoryTable =
+        !!selectedCategoryId && selectedCategoryName !== UNASSIGNED_CATEGORY_NAME;
+
+    const orderedCategories = [...categories].sort((left, right) => {
+        const leftIsUnassigned = left.name === UNASSIGNED_CATEGORY_NAME;
+        const rightIsUnassigned = right.name === UNASSIGNED_CATEGORY_NAME;
+
+        if (leftIsUnassigned && !rightIsUnassigned) {
+            return 1;
+        }
+
+        if (!leftIsUnassigned && rightIsUnassigned) {
+            return -1;
+        }
+
+        return 0;
+    });
+
+    function handleToggleTablePassword(rowKey) {
+        setTableVisiblePasswords((previous) => ({
+            ...previous,
+            [rowKey]: !previous[rowKey],
+        }));
+    }
 
     function generateCategoryId() {
         return `cat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -154,14 +228,94 @@ function MainPage() {
             };
         }
 
+        const categories = Array.isArray(data?.categories) ? data.categories : [];
+        const categoryIdSet = new Set(
+            categories.map((category) => category.id).filter(Boolean)
+        );
+        const categoryNameToId = new Map(
+            categories
+                .filter((category) => category?.name && category?.id)
+                .map((category) => [category.name.trim().toLowerCase(), category.id])
+        );
+
+        function normalizeEntityCategoryRefs(categoryRefs = []) {
+            const resolvedRefs = [];
+
+            for (const ref of categoryRefs) {
+                if (!ref) {
+                    continue;
+                }
+
+                if (categoryIdSet.has(ref)) {
+                    resolvedRefs.push(ref);
+                    continue;
+                }
+
+                const mappedId = categoryNameToId.get(String(ref).trim().toLowerCase());
+                if (mappedId) {
+                    resolvedRefs.push(mappedId);
+                }
+            }
+
+            return [...new Set(resolvedRefs)];
+        }
+
         return {
-            categories: Array.isArray(data?.categories) ? data.categories : [],
+            categories,
             entities: Array.isArray(data?.entities)
                 ? data.entities.map((entity) => ({
                       ...entity,
-                      categoryIds: entity.categoryIds || [],
+                      categoryIds: normalizeEntityCategoryRefs(entity.categoryIds || []),
                   }))
                 : [],
+        };
+    }
+
+    function ensureUnassignedCategory(
+        inputEntities = [],
+        inputCategories = []
+    ) {
+        const categoriesCopy = [...(inputCategories || [])];
+        let unassigned = categoriesCopy.find(
+            (category) =>
+                (category?.name || "").trim().toLowerCase() ===
+                UNASSIGNED_CATEGORY_NAME.toLowerCase()
+        );
+
+        const needsUnassigned = (inputEntities || []).some(
+            (entity) => !(entity?.categoryIds || []).length
+        );
+
+        if (!needsUnassigned) {
+            return {
+                categories: categoriesCopy,
+                entities: [...(inputEntities || [])],
+            };
+        }
+
+        if (!unassigned) {
+            unassigned = {
+                id: generateCategoryId(),
+                name: UNASSIGNED_CATEGORY_NAME,
+            };
+            categoriesCopy.push(unassigned);
+        }
+
+        const normalizedEntities = (inputEntities || []).map((entity) => {
+            const categoryIds = entity?.categoryIds || [];
+            if (categoryIds.length > 0) {
+                return entity;
+            }
+
+            return {
+                ...entity,
+                categoryIds: [unassigned.id],
+            };
+        });
+
+        return {
+            categories: categoriesCopy,
+            entities: normalizedEntities,
         };
     }
 
@@ -216,13 +370,123 @@ function MainPage() {
     }
 
     function openModal() {
+        setDepartmentName("");
+        setDepartmentRows([{ rowId: 1, personName: "", username: "", password: "" }]);
+        setDepartmentVisiblePasswords({});
         setIsModalOpen(true);
     }
 
     function closeModal() {
         setIsModalOpen(false);
-        setFormData({ name: "", username: "", password: "", categoryIds: [] });
-        setShowAddPassword(false);
+        setDepartmentName("");
+        setDepartmentRows([{ rowId: 1, personName: "", username: "", password: "" }]);
+        setDepartmentVisiblePasswords({});
+    }
+
+    function handleToggleDepartmentRowPassword(rowId) {
+        setDepartmentVisiblePasswords((previous) => ({
+            ...previous,
+            [rowId]: !previous[rowId],
+        }));
+    }
+
+    function handleDepartmentRowChange(rowId, field, value) {
+        setDepartmentRows((previous) =>
+            previous.map((row) =>
+                row.rowId === rowId ? { ...row, [field]: value } : row
+            )
+        );
+    }
+
+    function handleAddDepartmentRow() {
+        setDepartmentRows((previous) => [
+            ...previous,
+            {
+                rowId: Date.now() + Math.floor(Math.random() * 1000),
+                personName: "",
+                username: "",
+                password: "",
+            },
+        ]);
+    }
+
+    function handleRemoveDepartmentRow(rowId) {
+        setDepartmentRows((previous) => {
+            if (previous.length === 1) {
+                return previous;
+            }
+            return previous.filter((row) => row.rowId !== rowId);
+        });
+    }
+
+    function handleGenerateDepartmentRowPassword(rowId) {
+        const password = generateStrongPassword(14);
+        setDepartmentRows((previous) =>
+            previous.map((row) =>
+                row.rowId === rowId ? { ...row, password } : row
+            )
+        );
+    }
+
+    async function handleCreateDepartmentBundle(event) {
+        event.preventDefault();
+
+        const trimmedDepartment = departmentName.trim();
+        if (!trimmedDepartment) {
+            setErrorMessage("Department name is required.");
+            return;
+        }
+
+        if (trimmedDepartment.toLowerCase() === UNASSIGNED_CATEGORY_NAME.toLowerCase()) {
+            setErrorMessage('"Unassigned" is reserved. Choose a different department name.');
+            return;
+        }
+
+        const existingCategory = categories.find(
+            (category) => category.name.toLowerCase() === trimmedDepartment.toLowerCase()
+        );
+
+        if (!existingCategory && categories.length >= MAX_CATEGORIES) {
+            setErrorMessage("You can only have up to 5 categories.");
+            return;
+        }
+
+        const activeRows = departmentRows.filter(
+            (row) => row.personName.trim() || row.username.trim() || row.password.trim()
+        );
+
+        if (!activeRows.length) {
+            setErrorMessage("Add at least one person/account row.");
+            return;
+        }
+
+        const hasIncompleteRows = activeRows.some(
+            (row) => !row.personName.trim() || !row.username.trim() || !row.password.trim()
+        );
+        if (hasIncompleteRows) {
+            setErrorMessage("Each row must include person name, username, and password.");
+            return;
+        }
+
+        const targetCategoryId = existingCategory?.id || generateCategoryId();
+        const nextCategories = existingCategory
+            ? categories
+            : [...categories, { id: targetCategoryId, name: trimmedDepartment }];
+        const bundleEntities = activeRows.map((row) => ({
+            name: row.personName.trim(),
+            username: row.username.trim(),
+            password: row.password.trim(),
+            categoryIds: [targetCategoryId],
+        }));
+        const nextEntities = [...entities, ...bundleEntities];
+
+        setCategories(nextCategories);
+        setEntities(nextEntities);
+        setSelectedCategoryId(targetCategoryId);
+        await handleSaveVault(nextEntities, nextCategories);
+        setErrorMessage("");
+        closeModal();
+        setSelectedCategoryId(targetCategoryId);
     }
 
     function openMfaModal(index) {
@@ -238,6 +502,60 @@ function MainPage() {
         setUpdateFormData({ name: "", username: "", password: "", categoryIds: [] });
         setShowUpdatePassword(false);
         setShowDetailsPassword(false);
+    }
+
+    function openAddEntryModal(categoryId) {
+        setAddEntryTargetCategoryId(categoryId);
+        setAddEntryRows([{ rowId: Date.now(), personName: "", username: "", password: "" }]);
+        setAddEntryVisiblePasswords({});
+        setActiveCategoryMenuId("");
+        setIsAddEntryModalOpen(true);
+    }
+
+    function closeAddEntryModal() {
+        setIsAddEntryModalOpen(false);
+        setAddEntryTargetCategoryId("");
+        setAddEntryRows([{ rowId: 1, personName: "", username: "", password: "" }]);
+        setAddEntryVisiblePasswords({});
+    }
+
+    function handleToggleAddEntryPassword(rowId) {
+        setAddEntryVisiblePasswords((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
+    }
+
+    function handleAddEntryRowChange(rowId, field, value) {
+        setAddEntryRows((prev) => prev.map((row) => row.rowId === rowId ? { ...row, [field]: value } : row));
+    }
+
+    function handleAddEntryAddRow() {
+        setAddEntryRows((prev) => [
+            ...prev,
+            { rowId: Date.now() + Math.floor(Math.random() * 1000), personName: "", username: "", password: "" },
+        ]);
+    }
+
+    function handleRemoveAddEntryRow(rowId) {
+        setAddEntryRows((prev) => prev.length === 1 ? prev : prev.filter((row) => row.rowId !== rowId));
+    }
+
+    function handleGenerateAddEntryPassword(rowId) {
+        const password = generateStrongPassword(14);
+        setAddEntryRows((prev) => prev.map((row) => row.rowId === rowId ? { ...row, password } : row));
+    }
+
+    async function handleSubmitAddEntry(event) {
+        event.preventDefault();
+        const newEntities = addEntryRows.map((row) => ({
+            name: row.personName.trim(),
+            username: row.username.trim(),
+            password: row.password.trim(),
+            categoryIds: [addEntryTargetCategoryId],
+        }));
+        const nextEntities = [...entities, ...newEntities];
+        setEntities(nextEntities);
+        await handleSaveVault(nextEntities, categories);
+        setErrorMessage("");
+        closeAddEntryModal();
     }
 
     function showMfaActions() {
@@ -272,51 +590,13 @@ function MainPage() {
         }));
     }
 
-    function handleInputChange(event) {
-        const { name, value } = event.target;
-        setFormData((previous) => ({
-            ...previous,
-            [name]: value,
-        }));
-    }
-
-    function handleCategoryToggle(categoryId, isChecked, isUpdate = false) {
-        if (isUpdate) {
-            setUpdateFormData((previous) => ({
-                ...previous,
-                categoryIds: isChecked
-                    ? [...new Set([...(previous.categoryIds || []), categoryId])]
-                    : (previous.categoryIds || []).filter((id) => id !== categoryId),
-            }));
-            return;
-        }
-
-        setFormData((previous) => ({
+    function handleCategoryToggle(categoryId, isChecked) {
+        setUpdateFormData((previous) => ({
             ...previous,
             categoryIds: isChecked
                 ? [...new Set([...(previous.categoryIds || []), categoryId])]
                 : (previous.categoryIds || []).filter((id) => id !== categoryId),
         }));
-    }
-
-    async function handleAddEntity(event) {
-        event.preventDefault();
-
-        if (!formData.name || !formData.username || !formData.password) {
-            return;
-        }
-
-        const nextEntities = [
-            ...entities,
-            {
-                ...formData,
-                categoryIds: formData.categoryIds || [],
-            },
-        ];
-
-        setEntities(nextEntities);
-        await handleSaveVault(nextEntities, categories);
-        closeModal();
     }
 
     async function handleUpdateEntity(event) {
@@ -330,17 +610,26 @@ function MainPage() {
             return;
         }
 
-        const nextEntities = entities.map((entity, index) =>
+        const draftEntities = entities.map((entity, index) =>
             index === selectedEntityIndex
                 ? { ...updateFormData, categoryIds: updateFormData.categoryIds || [] }
                 : entity
         );
 
+        const normalized = ensureUnassignedCategory(draftEntities, categories);
+        const nextEntities = normalized.entities;
+        const nextCategories = normalized.categories;
+
+        setCategories(nextCategories);
         setEntities(nextEntities);
         if (isOnline) {
-            await handleSaveVault(nextEntities);
+            await handleSaveVault(nextEntities, nextCategories);
         } else {
-            queueVaultOperation({ type: 'update', index: selectedEntityIndex, entity: updateFormData });
+            queueVaultOperation({
+                type: "update",
+                index: selectedEntityIndex,
+                entity: nextEntities[selectedEntityIndex],
+            });
         }
         closeMfaModal();
     }
@@ -364,36 +653,6 @@ function MainPage() {
         setMfaModalStep("confirm-delete");
     }
 
-    function handleInputChange(event) {
-        const { name, value } = event.target;
-        setFormData((previous) => ({
-            ...previous,
-            [name]: value,
-        }));
-    }
-
-    async function handleAddEntity(event) {
-        event.preventDefault();
-        if (!formData.name || !formData.username || !formData.password) {
-            return;
-        }
-        const nextEntities = [...entities, formData];
-        if (isOnline) {
-            await handleSaveVault(nextEntities);
-        } else {
-            queueVaultOperation({ type: 'add', entity: formData });
-        }
-        closeModal();
-    }
-
-    function handleGenerateAddPassword() {
-        const password = generateStrongPassword(14);
-        setFormData((previous) => ({
-            ...previous,
-            password,
-        }));
-    }
-
     function handleGenerateUpdatePassword() {
         const password = generateStrongPassword(14);
         setUpdateFormData((previous) => ({
@@ -402,48 +661,23 @@ function MainPage() {
         }));
     }
 
-    async function handleCreateCategory() {
-        const trimmed = newCategoryName.trim();
+    async function handleRenameCategory(categoryId) {
+        const categoryToRename = categories.find((category) => category.id === categoryId);
 
-        if (!trimmed) {
+        if (!categoryToRename) {
             return;
         }
 
-        if (categories.length >= MAX_CATEGORIES) {
-            setErrorMessage("You can only have up to 5 categories.");
-            return;
-        }
+        const nextName = window.prompt("Enter a new name for this category:", categoryToRename.name);
+        const trimmed = (nextName || "").trim();
 
-        const duplicate = categories.some(
-            (category) => category.name.toLowerCase() === trimmed.toLowerCase()
-        );
-
-        if (duplicate) {
-            setErrorMessage("A category with that name already exists.");
-            return;
-        }
-
-        const nextCategories = [
-            ...categories,
-            { id: generateCategoryId(), name: trimmed },
-        ];
-
-        setCategories(nextCategories);
-        setNewCategoryName("");
-        setErrorMessage("");
-        await handleSaveVault(entities, nextCategories);
-    }
-
-    async function handleRenameCategory() {
-        const trimmed = renameCategoryName.trim();
-
-        if (!renameCategoryId || !trimmed) {
+        if (!trimmed || trimmed === categoryToRename.name) {
             return;
         }
 
         const duplicate = categories.some(
             (category) =>
-                category.id !== renameCategoryId &&
+                category.id !== categoryId &&
                 category.name.toLowerCase() === trimmed.toLowerCase()
         );
 
@@ -453,26 +687,26 @@ function MainPage() {
         }
 
         const nextCategories = categories.map((category) =>
-            category.id === renameCategoryId
+            category.id === categoryId
                 ? { ...category, name: trimmed }
                 : category
         );
 
         setCategories(nextCategories);
-        setRenameCategoryId("");
-        setRenameCategoryName("");
+        setActiveCategoryMenuId("");
         setErrorMessage("");
         await handleSaveVault(entities, nextCategories);
     }
 
     async function handleDeleteCategory(categoryId) {
-        const assignedCount = entities.filter((entity) =>
+        const assignedEntities = entities.filter((entity) =>
             (entity.categoryIds || []).includes(categoryId)
-        ).length;
+        );
+        const assignedCount = assignedEntities.length;
 
         if (assignedCount > 0) {
             const confirmed = window.confirm(
-                `This category is assigned to ${assignedCount} credential(s). Delete it and remove that assignment from those credentials?`
+                `This category contains ${assignedCount} credential(s). Delete the category and permanently delete those credential(s)?`
             );
 
             if (!confirmed) {
@@ -480,25 +714,50 @@ function MainPage() {
             }
         }
 
-        const nextCategories = categories.filter((category) => category.id !== categoryId);
-        const nextEntities = entities.map((entity) => ({
-            ...entity,
-            categoryIds: (entity.categoryIds || []).filter((id) => id !== categoryId),
-        }));
+        const draftCategories = categories.filter((category) => category.id !== categoryId);
+        const draftEntities = entities.filter(
+            (entity) => !(entity.categoryIds || []).includes(categoryId)
+        );
+        const normalized = ensureUnassignedCategory(draftEntities, draftCategories);
+        const nextCategories = normalized.categories;
+        const nextEntities = normalized.entities;
 
         if (selectedCategoryId === categoryId) {
             setSelectedCategoryId("");
         }
 
-        if (renameCategoryId === categoryId) {
-            setRenameCategoryId("");
-            setRenameCategoryName("");
+        if (activeCategoryMenuId === categoryId) {
+            setActiveCategoryMenuId("");
         }
 
         setCategories(nextCategories);
         setEntities(nextEntities);
         await handleSaveVault(nextEntities, nextCategories);
     }
+
+    function toggleCategoryMenu(categoryId) {
+        setActiveCategoryMenuId((previous) =>
+            previous === categoryId ? "" : categoryId
+        );
+    }
+
+    useEffect(() => {
+        if (!activeCategoryMenuId) {
+            return undefined;
+        }
+
+        function handleOutsideMenuClick(event) {
+            if (event.target.closest(".category-action-row")) {
+                return;
+            }
+            setActiveCategoryMenuId("");
+        }
+
+        document.addEventListener("mousedown", handleOutsideMenuClick);
+        return () => {
+            document.removeEventListener("mousedown", handleOutsideMenuClick);
+        };
+    }, [activeCategoryMenuId]);
 
     async function handleSaveVault(
         updatedEntities = entities,
@@ -634,12 +893,14 @@ function MainPage() {
             } else if (envelope && envelope.encryptedData && envelope.encryptedDEK) {
                 // Cache envelope after successful online load
                 if (online) cacheEncryptedVault(envelope);
-                const data = await envelopeDecrypt(envelope, masterKey);
-                setEntities(data);
                 const decrypted = await envelopeDecrypt(envelope, masterKey);
                 const normalized = normalizeVaultData(decrypted);
-                setCategories(normalized.categories);
-                setEntities(normalized.entities);
+                const enforced = ensureUnassignedCategory(
+                    normalized.entities,
+                    normalized.categories
+                );
+                setCategories(enforced.categories);
+                setEntities(enforced.entities);
                 setErrorMessage("");
                 setRetryLoad(false);
             } else {
@@ -672,8 +933,34 @@ function MainPage() {
         navigate("/");
     }
 
-    function openDeleteAccountModal() {
+    async function openDeleteAccountModal() {
+        setDeleteForm({
+            email: "",
+            password: "",
+            method: "totp",
+            totpCode: "",
+            deviceId: "",
+        });
+        setDeleteAccountMethods([]);
         setIsDeleteAccountModalOpen(true);
+
+        if (!token) {
+            return;
+        }
+
+        const status = await getMfaStatus();
+        if (status?.status) {
+            return;
+        }
+
+        const methods = Array.isArray(status?.methods) ? status.methods : [];
+        setDeleteAccountMethods(methods);
+        if (methods.length > 0) {
+            setDeleteForm((previous) => ({
+                ...previous,
+                method: methods[0],
+            }));
+        }
     }
 
     function closeDeleteAccountModal() {
@@ -684,6 +971,14 @@ function MainPage() {
         setIsDeleteAccountModalOpen(false);
     }
 
+    function handleDeleteInputChange(event) {
+        const { name, value } = event.target;
+        setDeleteForm((previous) => ({
+            ...previous,
+            [name]: value,
+        }));
+    }
+
     async function handleDeleteAccount() {
         if (isPreviewMode) {
             setErrorMessage("Delete account is disabled in preview mode.");
@@ -691,11 +986,39 @@ function MainPage() {
             return;
         }
 
+        if (!deleteForm.email.trim() || !deleteForm.password.trim()) {
+            setErrorMessage("Please enter your email and current password.");
+            return;
+        }
+
+        if (!deleteForm.method) {
+            setErrorMessage("No MFA method is available for this account.");
+            return;
+        }
+
+        if (deleteForm.method === "totp" && deleteForm.totpCode.trim().length !== 6) {
+            setErrorMessage("Please provide a valid 6-digit MFA code.");
+            return;
+        }
+
+        if (deleteForm.method === "biometric" && !deleteForm.deviceId.trim()) {
+            setErrorMessage("Please provide your registered device ID for biometric MFA.");
+            return;
+        }
+
         setIsDeletingAccount(true);
         setErrorMessage("");
 
         try {
-            const response = await apiDeleteAccount();
+            const response = await apiDeleteAccount({
+                email: deleteForm.email.trim(),
+                password: deleteForm.password,
+                method: deleteForm.method,
+                totpCode:
+                    deleteForm.method === "totp" ? deleteForm.totpCode.trim() : null,
+                deviceId:
+                    deleteForm.method === "biometric" ? deleteForm.deviceId.trim() : null,
+            });
 
             if (
                 response &&
@@ -806,13 +1129,16 @@ function MainPage() {
                                 onClick={openDeleteAccountModal}
                                 disabled={isPreviewMode || isDeletingAccount}
                             />
+                            <span className="main-status-bar" style={{ color: isOnline ? 'green' : 'orange', fontWeight: 500 }}>
+                                {isOnline ? 'Online' : 'Offline'}
+                            </span>
                         </div>
                     </nav>
                 </div>
 
                 <div className="main-header-center">
                     <div className="main-title-group">
-                        <h1 className="main-title">Welcome {displayUsername}</h1>
+                        <h1 className="main-title">Welcome {welcomeUsername}</h1>
                         {isPreviewMode && (
                             <div className="preview-message">
                                 Preview mode is enabled. Vault changes stay in local UI state only.
@@ -836,11 +1162,24 @@ function MainPage() {
                             <section className="search-results-panel">
                                 {searchResults.length > 0 ? (
                                     <ul className="search-results-list">
-                                        {searchResults.map((entity, index) => (
-                                            <li key={`${entity.name}-${entity.username}-result-${index}`}>
-                                                {entity.name} ({entity.username})
-                                            </li>
-                                        ))}
+                                        {searchResults.map((entity, index) => {
+                                            const categoryLabel =
+                                                getCategoryNames(entity.categoryIds).join(", ") ||
+                                                UNASSIGNED_CATEGORY_NAME;
+
+                                            return (
+                                                <li key={`${entity.name}-${entity.username}-result-${index}`}>
+                                                    <button
+                                                        type="button"
+                                                        className="search-result-button"
+                                                        onClick={() => handleSearchResultClick(entity)}
+                                                        aria-label={`Open ${entity.name}`}
+                                                    >
+                                                        {entity.name} ({entity.username} - {categoryLabel})
+                                                    </button>
+                                                </li>
+                                            );
+                                        })}
                                     </ul>
                                 ) : (
                                     <p className="search-results-empty">No matches found.</p>
@@ -848,9 +1187,6 @@ function MainPage() {
                             </section>
                         )}
                     </div>
-                </div>
-                <div className="main-status-bar" style={{ margin: '8px 0', color: isOnline ? 'green' : 'orange', fontWeight: 500 }}>
-                    {isOnline ? 'Online' : 'Offline'}
                 </div>
             </header>
 
@@ -884,75 +1220,9 @@ function MainPage() {
 
             <div className="main-content">
                 <div className="main-categories-column">
-                    <h2 style={{ marginTop: 0, marginBottom: 16 }}>Categories</h2>
+                    <h2 className="main-section-title">Categories</h2>
 
-                    <div style={{ marginBottom: 16 }}>
-                        <input
-                            type="text"
-                            placeholder="New category name"
-                            value={newCategoryName}
-                            onChange={(event) => setNewCategoryName(event.target.value)}
-                            aria-label="New category name"
-                            disabled={categories.length >= MAX_CATEGORIES}
-                            className="category-form-input"
-                        />
-
-                        <button
-                            type="button"
-                            onClick={handleCreateCategory}
-                            disabled={categories.length >= MAX_CATEGORIES}
-                            className="category-form-button"
-                        >
-                            Create
-                        </button>
-
-                        {categories.length >= MAX_CATEGORIES && (
-                            <p style={{ marginTop: 8, marginBottom: 8 }}>
-                                Maximum of 5 categories reached.
-                            </p>
-                        )}
-
-                        <select
-                            value={renameCategoryId}
-                            onChange={(event) => setRenameCategoryId(event.target.value)}
-                            aria-label="Select category to rename"
-                            className="category-form-select"
-                        >
-                            <option value="">Select category to rename</option>
-                            {categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                    {category.name}
-                                </option>
-                            ))}
-                        </select>
-
-                        <input
-                            type="text"
-                            placeholder="New name"
-                            value={renameCategoryName}
-                            onChange={(event) => setRenameCategoryName(event.target.value)}
-                            aria-label="Rename category"
-                            className="category-form-input"
-                        />
-
-                        <button
-                            type="button"
-                            onClick={handleRenameCategory}
-                            className="category-form-button"
-                        >
-                            Rename
-                        </button>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={() => setSelectedCategoryId("")}
-                        className={`category-filter-button ${selectedCategoryId === "" ? "category-filter-button-selected" : ""}`.trim()}
-                    >
-                        All Categories
-                    </button>
-
-                    {categories.map((category) => (
+                    {orderedCategories.map((category) => (
                         <div key={category.id} className="category-action-row">
                             <button
                                 type="button"
@@ -964,52 +1234,136 @@ function MainPage() {
 
                             <button
                                 type="button"
-                                onClick={() => handleDeleteCategory(category.id)}
-                                aria-label={`Delete ${category.name}`}
-                                className="category-delete-button"
+                                onClick={() => toggleCategoryMenu(category.id)}
+                                aria-label={`Category settings for ${category.name}`}
+                                className="category-settings-button"
                             >
-                                X
+                                ⚙
                             </button>
+
+                            {activeCategoryMenuId === category.id && (
+                                <div className="category-settings-menu" role="menu" aria-label={`Category actions for ${category.name}`}>
+                                    <button
+                                        type="button"
+                                        className="category-settings-item"
+                                        onClick={() => openAddEntryModal(category.id)}
+                                    >
+                                        Add Entry
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="category-settings-item"
+                                        onClick={() => handleRenameCategory(category.id)}
+                                    >
+                                        Rename
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="category-settings-item category-settings-item-danger"
+                                        onClick={() => handleDeleteCategory(category.id)}
+                                    >
+                                        Delete
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="category-settings-item"
+                                        onClick={() => setActiveCategoryMenuId("")}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
 
                 <div className="main-entities-column">
-                    <h2 style={{ marginTop: 0, marginBottom: 16 }}>
-                        {selectedCategoryId
-                            ? categories.find((category) => category.id === selectedCategoryId)?.name || "Entities"
-                            : "Entities"}
+                    <h2 className="main-section-title main-section-title-entities">
+                        {selectedCategoryId ? selectedCategoryName || "Entities" : "Entities"}
                     </h2>
 
-                    {filteredEntities.length > 0 && (
-                        <ul className="entity-list">
-                            {filteredEntities.map((entity, index) => {
-                                const entityIndex = entities.findIndex((candidate) =>
-                                    candidate.name === entity.name &&
-                                    candidate.username === entity.username &&
-                                    candidate.password === entity.password &&
-                                    JSON.stringify(candidate.categoryIds || []) ===
-                                        JSON.stringify(entity.categoryIds || [])
-                                );
+                    {selectedCategoryId ? (
+                        filteredEntities.length > 0 ? (
+                            showSelectedCategoryTable ? (
+                                <div className="category-entity-table" role="table" aria-label="Category entities">
+                                    <div className="category-entity-table-header" role="row">
+                                        <span>Name</span>
+                                        <span>Username</span>
+                                        <span>Password</span>
+                                        <span>Actions</span>
+                                    </div>
 
-                                return (
-                                    <li
-                                        key={`${entity.name}-${entity.username}-${index}`}
-                                        className="entity-item"
-                                    >
-                                        <button
-                                            type="button"
-                                            className="action-button entity-button"
-                                            data-label={entity.name}
-                                            aria-label={`${entity.name} (${entity.username})`}
-                                            title={`Username: ${entity.username}`}
-                                            onClick={() => openMfaModal(entityIndex)}
-                                        />
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
+                                    {filteredEntities.map((entity, index) => {
+                                        const entityIndex = getEntityIndex(entity);
+                                        const rowKey = entityIndex >= 0 ? entityIndex : `${entity.name}-${index}`;
+                                        const isVisible = !!tableVisiblePasswords[rowKey];
+
+                                        return (
+                                            <div
+                                                key={`${entity.name}-${entity.username}-table-${index}`}
+                                                className="category-entity-table-row"
+                                                role="row"
+                                            >
+                                                <span>{entity.name}</span>
+                                                <span>{entity.username}</span>
+                                                <div className="category-entity-password-cell">
+                                                    <span className="category-entity-password-value">
+                                                        {isVisible ? entity.password : "••••••••"}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="category-entity-visibility-button"
+                                                        onClick={() => handleToggleTablePassword(rowKey)}
+                                                        aria-label={isVisible ? "Hide password" : "Show password"}
+                                                    >
+                                                        <img
+                                                            src={isVisible ? eyeClose : eyeOpen}
+                                                            alt={isVisible ? "Hide password" : "Show password"}
+                                                            className="password-toggle-icon"
+                                                        />
+                                                    </button>
+                                                </div>
+                                                <div className="category-entity-row-actions">
+                                                    <button
+                                                        type="button"
+                                                        className="category-entity-row-button"
+                                                        onClick={() => openMfaModal(entityIndex)}
+                                                        aria-label={`Open ${entity.name}`}
+                                                    >
+                                                        View
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <ul className="entity-list">
+                                    {filteredEntities.map((entity, index) => {
+                                        const entityIndex = getEntityIndex(entity);
+
+                                        return (
+                                            <li
+                                                key={`${entity.name}-${entity.username}-${index}`}
+                                                className="entity-item"
+                                            >
+                                                <button
+                                                    type="button"
+                                                    className="action-button entity-button"
+                                                    data-label={entity.name}
+                                                    aria-label={`${entity.name} (${entity.username})`}
+                                                    title={`Username: ${entity.username}`}
+                                                    onClick={() => openMfaModal(entityIndex)}
+                                                />
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            )
+                        ) : (
+                            <p className="entity-empty-state">No entities in this view.</p>
+                        )
+                    ) : null}
 
                     <button
                         id="add-entity-button"
@@ -1026,117 +1380,234 @@ function MainPage() {
                     className="entity-modal-backdrop"
                     role="dialog"
                     aria-modal="true"
-                    aria-label="Add entity"
+                    aria-label="Add category"
                 >
-                    <form className="entity-modal" onSubmit={handleAddEntity}>
-                        <h2>Add Entity</h2>
+                    <div className="entity-modal add-entry-modal">
+                        <form onSubmit={handleCreateDepartmentBundle} style={{ width: "100%" }} autoComplete="off">
+                            <h2>Add Category</h2>
 
-                        <input
-                            type="text"
-                            name="name"
-                            placeholder="Name"
-                            value={formData.name}
-                            onChange={handleInputChange}
-                            required
-                        />
-
-                        <input
-                            type="text"
-                            name="username"
-                            placeholder="Username"
-                            value={formData.username}
-                            onChange={handleInputChange}
-                            required
-                        />
-
-                        <div className="category-selector" style={{ marginBottom: 12 }}>
-                            <p><strong>Categories</strong></p>
-                            {categories.length > 0 ? (
-                                categories.map((category) => (
-                                    <label
-                                        key={category.id}
-                                        style={{ display: "block", marginBottom: 6 }}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={(formData.categoryIds || []).includes(category.id)}
-                                            onChange={(event) =>
-                                                handleCategoryToggle(
-                                                    category.id,
-                                                    event.target.checked,
-                                                    false
-                                                )
-                                            }
-                                        />
-                                        {" "}{category.name}
-                                    </label>
-                                ))
-                            ) : (
-                                <p>No categories yet.</p>
-                            )}
-                        </div>
-
-                        <div className="password-field">
                             <input
-                                type={showAddPassword ? "text" : "password"}
-                                name="password"
-                                placeholder="Password"
-                                value={formData.password}
-                                onChange={handleInputChange}
+                                type="text"
+                                name="category_name"
+                                placeholder="Name of category"
+                                value={departmentName}
+                                autoComplete="off"
+                                onChange={(event) => setDepartmentName(event.target.value)}
                                 required
                             />
-                            <button
-                                type="button"
-                                className="password-toggle"
-                                onClick={() => setShowAddPassword((previous) => !previous)}
-                                aria-label={showAddPassword ? "Hide password" : "Show password"}
-                            >
-                                <img
-                                    src={showAddPassword ? eyeClose : eyeOpen}
-                                    alt={showAddPassword ? "Hide password" : "Show password"}
-                                    className="password-toggle-icon"
+
+                            <div className="department-table" role="table" aria-label="Category members">
+                                <div className="department-table-header" role="row">
+                                    <span>Person Name</span>
+                                    <span>Username</span>
+                                    <span>Password</span>
+                                    <span>Actions</span>
+                                </div>
+
+                                {departmentRows.map((row) => (
+                                    <div key={row.rowId} className="department-table-row" role="row">
+                                        <input
+                                            type="text"
+                                            name={`category_person_${row.rowId}`}
+                                            placeholder="Person name"
+                                            value={row.personName}
+                                            autoComplete="off"
+                                            onChange={(event) =>
+                                                handleDepartmentRowChange(row.rowId, "personName", event.target.value)
+                                            }
+                                        />
+                                        <input
+                                            type="text"
+                                            name={`category_account_username_${row.rowId}`}
+                                            placeholder="Username"
+                                            value={row.username}
+                                            autoComplete="off"
+                                            onChange={(event) =>
+                                                handleDepartmentRowChange(row.rowId, "username", event.target.value)
+                                            }
+                                        />
+                                        <div className="password-field department-password-field">
+                                            <input
+                                                type={departmentVisiblePasswords[row.rowId] ? "text" : "password"}
+                                                name={`category_account_password_${row.rowId}`}
+                                                placeholder="Password"
+                                                value={row.password}
+                                                autoComplete="new-password"
+                                                onChange={(event) =>
+                                                    handleDepartmentRowChange(row.rowId, "password", event.target.value)
+                                                }
+                                            />
+                                            <button
+                                                type="button"
+                                                className="password-toggle"
+                                                onClick={() => handleToggleDepartmentRowPassword(row.rowId)}
+                                                aria-label={departmentVisiblePasswords[row.rowId] ? "Hide password" : "Show password"}
+                                            >
+                                                <img
+                                                    src={departmentVisiblePasswords[row.rowId] ? eyeClose : eyeOpen}
+                                                    alt={departmentVisiblePasswords[row.rowId] ? "Hide password" : "Show password"}
+                                                    className="password-toggle-icon"
+                                                />
+                                            </button>
+                                        </div>
+                                        <div className="department-row-actions">
+                                            <button
+                                                type="button"
+                                                className="department-row-button"
+                                                onClick={() => handleGenerateDepartmentRowPassword(row.rowId)}
+                                            >
+                                                Generate
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="department-row-button"
+                                                onClick={() => handleRemoveDepartmentRow(row.rowId)}
+                                                disabled={departmentRows.length === 1}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="department-add-row-wrap">
+                                <button type="button" className="department-row-button" onClick={handleAddDepartmentRow}>
+                                    + Add Person
+                                </button>
+                            </div>
+
+                            <div className="entity-modal-actions">
+                                <button
+                                    type="submit"
+                                    className="action-button entity-modal-button"
+                                    data-label="SAVE"
+                                    aria-label="Save Category and Rows"
+                                    disabled={!departmentName.trim()}
                                 />
-                            </button>
-                        </div>
+                                <button
+                                    type="button"
+                                    className="action-button entity-modal-button"
+                                    data-label="CANCEL"
+                                    aria-label="Cancel Add Category"
+                                    onClick={closeModal}
+                                />
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
-                        {formData.password && (
-                            <p className="password-strength-text">
-                                Password strength:
-                                <span
-                                    className={`strength-${addPasswordStrength.label.replace(/\s+/g, "").toLowerCase()}`}
-                                >
-                                    {" "}{addPasswordStrength.label}
-                                </span>
-                            </p>
-                        )}
+            {isAddEntryModalOpen && (
+                <div
+                    className="entity-modal-backdrop"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Add entry"
+                >
+                    <div className="entity-modal add-entry-modal">
+                        <form onSubmit={handleSubmitAddEntry} style={{ width: "100%" }} autoComplete="off">
+                            <h2>Add Entry</h2>
 
-                        <div className="generate-button-container">
-                            <button
-                                type="button"
-                                className="action-button"
-                                onClick={handleGenerateAddPassword}
-                            >
-                                GENERATE?
-                            </button>
-                        </div>
+                            <div className="department-table" role="table" aria-label="New entries">
+                                <div className="department-table-header" role="row">
+                                    <span>Person Name</span>
+                                    <span>Username</span>
+                                    <span>Password</span>
+                                    <span>Actions</span>
+                                </div>
 
-                        <div className="entity-modal-actions">
-                            <button
-                                type="submit"
-                                className="action-button entity-modal-button"
-                                data-label="SAVE"
-                                aria-label="Save Entity"
-                                disabled={!isAddFormValid}
-                            />
-                            <button
-                                type="button"
-                                className="action-button entity-modal-button"
-                                data-label="CANCEL"
-                                aria-label="Cancel Add Entity"
-                                onClick={closeModal}
-                            />
-                        </div>
-                    </form>
+                                {addEntryRows.map((row) => (
+                                    <div key={row.rowId} className="department-table-row" role="row">
+                                        <input
+                                            type="text"
+                                            name={`add_entry_person_${row.rowId}`}
+                                            placeholder="Person name"
+                                            value={row.personName}
+                                            autoComplete="off"
+                                            onChange={(event) =>
+                                                handleAddEntryRowChange(row.rowId, "personName", event.target.value)
+                                            }
+                                        />
+                                        <input
+                                            type="text"
+                                            name={`add_entry_username_${row.rowId}`}
+                                            placeholder="Username"
+                                            value={row.username}
+                                            autoComplete="off"
+                                            onChange={(event) =>
+                                                handleAddEntryRowChange(row.rowId, "username", event.target.value)
+                                            }
+                                        />
+                                        <div className="password-field department-password-field">
+                                            <input
+                                                type={addEntryVisiblePasswords[row.rowId] ? "text" : "password"}
+                                                name={`add_entry_password_${row.rowId}`}
+                                                placeholder="Password"
+                                                value={row.password}
+                                                autoComplete="new-password"
+                                                onChange={(event) =>
+                                                    handleAddEntryRowChange(row.rowId, "password", event.target.value)
+                                                }
+                                            />
+                                            <button
+                                                type="button"
+                                                className="password-toggle"
+                                                onClick={() => handleToggleAddEntryPassword(row.rowId)}
+                                                aria-label={addEntryVisiblePasswords[row.rowId] ? "Hide password" : "Show password"}
+                                            >
+                                                <img
+                                                    src={addEntryVisiblePasswords[row.rowId] ? eyeClose : eyeOpen}
+                                                    alt={addEntryVisiblePasswords[row.rowId] ? "Hide password" : "Show password"}
+                                                    className="password-toggle-icon"
+                                                />
+                                            </button>
+                                        </div>
+                                        <div className="department-row-actions">
+                                            <button
+                                                type="button"
+                                                className="department-row-button"
+                                                onClick={() => handleGenerateAddEntryPassword(row.rowId)}
+                                            >
+                                                Generate
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="department-row-button"
+                                                onClick={() => handleRemoveAddEntryRow(row.rowId)}
+                                                disabled={addEntryRows.length === 1}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="department-add-row-wrap">
+                                <button type="button" className="department-row-button" onClick={handleAddEntryAddRow}>
+                                    + Add Person
+                                </button>
+                            </div>
+
+                            <div className="entity-modal-actions">
+                                <button
+                                    type="submit"
+                                    className="action-button entity-modal-button"
+                                    data-label="ADD"
+                                    aria-label="Add Entries"
+                                    disabled={!addEntryRows.every(row => row.personName.trim() && row.username.trim() && row.password.trim())}
+                                />
+                                <button
+                                    type="button"
+                                    className="action-button entity-modal-button"
+                                    data-label="CANCEL"
+                                    aria-label="Cancel Add Entry"
+                                    onClick={closeAddEntryModal}
+                                />
+                            </div>
+                        </form>
+                    </div>
                 </div>
             )}
 
@@ -1275,7 +1746,7 @@ function MainPage() {
                                     <input
                                         type="text"
                                         name="name"
-                                        placeholder="Name"
+                                        placeholder="Name of organization"
                                         value={updateFormData.name}
                                         onChange={handleUpdateInputChange}
                                         required
@@ -1296,7 +1767,7 @@ function MainPage() {
                                             categories.map((category) => (
                                                 <label
                                                     key={category.id}
-                                                    style={{ display: "block", marginBottom: 6 }}
+                                                    className="category-checkbox-option"
                                                 >
                                                     <input
                                                         type="checkbox"
@@ -1304,8 +1775,7 @@ function MainPage() {
                                                         onChange={(event) =>
                                                             handleCategoryToggle(
                                                                 category.id,
-                                                                event.target.checked,
-                                                                true
+                                                                event.target.checked
                                                             )
                                                         }
                                                     />
@@ -1388,11 +1858,71 @@ function MainPage() {
                 <div className="entity-modal-backdrop" onClick={closeDeleteAccountModal}>
                     <div className="entity-modal" onClick={(event) => event.stopPropagation()}>
                         <h2>Delete Account</h2>
-                        <p>MFA here</p>
                         <p>
                             This will permanently delete your account, vault data, sessions,
                             and registered devices.
                         </p>
+
+                        <input
+                            type="email"
+                            name="email"
+                            placeholder="Email"
+                            value={deleteForm.email}
+                            onChange={handleDeleteInputChange}
+                            disabled={isDeletingAccount}
+                            required
+                        />
+
+                        <input
+                            type="password"
+                            name="password"
+                            placeholder="Current password"
+                            value={deleteForm.password}
+                            onChange={handleDeleteInputChange}
+                            disabled={isDeletingAccount}
+                            required
+                        />
+
+                        <select
+                            name="method"
+                            value={deleteForm.method}
+                            onChange={handleDeleteInputChange}
+                            disabled={isDeletingAccount || deleteAccountMethods.length === 0}
+                            className="category-form-select"
+                        >
+                            {deleteAccountMethods.length === 0 ? (
+                                <option value="">No MFA methods found</option>
+                            ) : (
+                                deleteAccountMethods.map((method) => (
+                                    <option key={method} value={method}>
+                                        {method.toUpperCase()}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+
+                        {deleteForm.method === "totp" && (
+                            <input
+                                type="text"
+                                name="totpCode"
+                                placeholder="6-digit MFA code"
+                                value={deleteForm.totpCode}
+                                onChange={handleDeleteInputChange}
+                                maxLength={6}
+                                disabled={isDeletingAccount}
+                            />
+                        )}
+
+                        {deleteForm.method === "biometric" && (
+                            <input
+                                type="text"
+                                name="deviceId"
+                                placeholder="Registered device ID"
+                                value={deleteForm.deviceId}
+                                onChange={handleDeleteInputChange}
+                                disabled={isDeletingAccount}
+                            />
+                        )}
 
                         <div className="entity-modal-actions">
                             <button

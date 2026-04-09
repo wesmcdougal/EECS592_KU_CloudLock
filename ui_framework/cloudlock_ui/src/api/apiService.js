@@ -22,6 +22,16 @@ export async function post(endpoint, data, timeout = 30000) {
   }, timeout);
 }
 
+export async function postPublic(endpoint, data, timeout = 30000) {
+  return fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  }, timeout);
+}
+
 export async function put(endpoint, data, timeout = 10000) {
   return fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
     method: 'PUT',
@@ -44,6 +54,7 @@ export async function get(endpoint, timeout = 10000) {
 
 export default {
   post,
+  postPublic,
   put,
   get,
 };

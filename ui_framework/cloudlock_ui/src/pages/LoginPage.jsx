@@ -35,7 +35,7 @@ function LoginPage() {
                 <div className="container">
                     <button
                         className="action-button home-action-button"
-                        style={{ marginTop: 0 }}
+                        style={{ marginTop: 0, width: 'auto', padding: '0 20px', whiteSpace: 'nowrap' }}
                         onClick={() => setShowOfflineModal(true)}
                     >
                         OFFLINE UNLOCK
