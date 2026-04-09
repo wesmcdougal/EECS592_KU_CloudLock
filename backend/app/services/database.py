@@ -11,9 +11,11 @@ Provides local-development persistence with production-like behavior. Responsibi
 - WebAuthn challenge and assertion helper state for local testing
 
 Revision History:
+- Wesley McDougal - 09APR2026 - Refactored WebAuthn registration/assertion helpers, improved fallback logic, and enhanced diagnostics for Android and multi-device support.
 - Wesley McDougal - 29MAR2026 - Added MFA and WebAuthn support methods for local service
 """
 from typing import Dict, Optional
+import hmac
 import time
 import uuid
 
@@ -33,6 +35,7 @@ class InMemoryDatabaseService:
         self.email_lookup_index: Dict[str, str] = {}     # sha256(email) → user_id
         self.username_lookup_index: Dict[str, str] = {}  # sha256(username) → user_id
         self.vaults: Dict[str, dict] = {}
+        self.audit_events: list[dict] = []
 
     def create_user(
         self,
@@ -41,21 +44,15 @@ class InMemoryDatabaseService:
         auth_image_id: str = "img_001",
         username_lookup: Optional[str] = None,
         mfa_enrollment: Optional[MfaEnrollmentPreference] = None,
+        proposed_user_id: Optional[str] = None,
     ) -> UserInDB:
         if email_lookup in self.email_lookup_index:
             raise ValueError("An account with this email already exists")
         if username_lookup and username_lookup in self.username_lookup_index:
             raise ValueError("An account with this username already exists")
 
-        mfa_methods = []
-        if mfa_enrollment:
-            if mfa_enrollment.enable_biometric:
-                mfa_methods.append("biometric")
-            if mfa_enrollment.enable_totp:
-                mfa_methods.append("totp")
-
         user = UserInDB(
-            user_id=str(uuid.uuid4()),
+            user_id=proposed_user_id or str(uuid.uuid4()),
             email_lookup=email_lookup,
             username_lookup=username_lookup,
             verifier_hash=verifier_context.hash(auth_verifier),
@@ -63,8 +60,8 @@ class InMemoryDatabaseService:
             created_at=int(time.time()),
             account_status="active",
             failed_login_attempts=0,
-            mfa_enabled=bool(mfa_methods),
-            mfa_methods=mfa_methods,
+            mfa_enabled=False,
+            mfa_methods=[],
         )
         self.users[user.user_id] = user
         self.email_lookup_index[email_lookup] = user.user_id
@@ -111,15 +108,42 @@ class InMemoryDatabaseService:
             self.users[user_id].failed_login_attempts = 0
 
     def create_session(self, user_id: str) -> str:
+        if user_id not in self.users:
+            raise ValueError("User not found")
         return f"dev-token-{user_id}"
 
     def get_user_from_token(self, token: str) -> Optional[str]:
         if token.startswith("dev-token-"):
-            return token.replace("dev-token-", "", 1)
+            user_id = token.replace("dev-token-", "", 1)
+            user = self.users.get(user_id)
+            if user and user.account_status == "active":
+                return user_id
         return None
 
     def delete_session(self, token: str):
         return None
+
+    def delete_user_account(self, user_id: str) -> bool:
+        user = self.users.pop(user_id, None)
+        if not user:
+            return False
+
+        self.email_lookup_index.pop(user.email_lookup, None)
+        if user.username_lookup:
+            self.username_lookup_index.pop(user.username_lookup, None)
+        self.vaults.pop(user_id, None)
+        return True
+
+    def write_audit_event(self, *, event_type: str, user_id: str, metadata: Optional[dict] = None):
+        self.audit_events.append(
+            {
+                "event_id": str(uuid.uuid4()),
+                "event_type": event_type,
+                "user_id": user_id,
+                "timestamp": int(time.time()),
+                "metadata": metadata or {},
+            }
+        )
 
     def save_vault(self, user_id: str, encrypted_vault: str):
         self.vaults[user_id] = {
@@ -165,14 +189,20 @@ class InMemoryDatabaseService:
             "enabled": user.mfa_enabled,
             "methods": user.mfa_methods,
             "biometric_devices": user.biometric_devices,
+            "totp_enrolled": bool(user.totp_secret_encrypted),
         }
 
     def update_mfa_preferences(self, user_id: str, methods: list[str]) -> dict:
         user = self.users.get(user_id)
         if not user:
             raise ValueError("User not found")
-        user.mfa_methods = methods
-        user.mfa_enabled = bool(methods)
+        allowed_methods = []
+        if "biometric" in methods and user.biometric_devices:
+            allowed_methods.append("biometric")
+        if "totp" in methods and user.totp_secret_encrypted:
+            allowed_methods.append("totp")
+        user.mfa_methods = allowed_methods
+        user.mfa_enabled = bool(allowed_methods)
         return self.get_mfa_status(user_id)
 
     def register_biometric_device(self, user_id: str, device_id: str, label: str) -> BiometricDevice:
@@ -211,7 +241,12 @@ class InMemoryDatabaseService:
 
         return len(user.biometric_devices) < previous_count
 
-    def create_mfa_challenge(self, user_id: str, methods: list[str]) -> str:
+    def create_mfa_challenge(
+        self,
+        user_id: str,
+        methods: list[str],
+        device_fingerprint_hash: Optional[str] = None,
+    ) -> str:
         now = int(time.time())
         payload = {
             "sub": user_id,
@@ -220,6 +255,8 @@ class InMemoryDatabaseService:
             "iat": now,
             "exp": now + settings.mfa_challenge_expire_seconds,
         }
+        if device_fingerprint_hash:
+            payload["dfp"] = device_fingerprint_hash
         return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
     def verify_mfa_challenge(self, token: str) -> Optional[dict]:
@@ -234,7 +271,80 @@ class InMemoryDatabaseService:
         return {
             "user_id": payload.get("sub"),
             "mfa_methods": payload.get("mfa_methods", []),
+            "device_fingerprint_hash": payload.get("dfp"),
         }
+
+    # ── Image-auth challenge / context checks ───────────────────────────────
+
+    def create_image_challenge(self, user_id: str, device_fingerprint_hash: Optional[str] = None) -> str:
+        now = int(time.time())
+        payload = {
+            "sub": user_id,
+            "purpose": "image-login",
+            "iat": now,
+            "exp": now + 120,
+        }
+        if device_fingerprint_hash:
+            payload["device_fingerprint_hash"] = device_fingerprint_hash
+        return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+    def verify_image_challenge(self, token: str) -> Optional[dict]:
+        try:
+            payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        except JWTError:
+            return None
+
+        if payload.get("purpose") != "image-login":
+            return None
+
+        return {
+            "user_id": payload.get("sub"),
+            "device_fingerprint_hash": payload.get("device_fingerprint_hash"),
+        }
+
+    def is_suspicious_context(self, user_id: str, device_fingerprint_hash: Optional[str]) -> bool:
+        user = self.users.get(user_id)
+        if not user:
+            return False
+
+        if not user.auth_image_id or user.auth_image_id == "img_001":
+            return False
+
+        if not device_fingerprint_hash:
+            return True
+
+        now = int(time.time())
+        for ctx in user.trusted_contexts:
+            if ctx.get("fp") == device_fingerprint_hash and int(ctx.get("exp", 0)) > now:
+                return False
+        return True
+
+    def trust_context(self, user_id: str, device_fingerprint_hash: str, ttl_days: int = 30):
+        user = self.users.get(user_id)
+        if not user:
+            return
+
+        now = int(time.time())
+        new_ctx = {"fp": device_fingerprint_hash, "exp": now + ttl_days * 86400}
+        live = [
+            ctx for ctx in user.trusted_contexts
+            if int(ctx.get("exp", 0)) > now and ctx.get("fp") != device_fingerprint_hash
+        ]
+        live.append(new_ctx)
+        user.trusted_contexts = live[-20:]
+
+    def update_trusted_contexts(self, user_id: str, trusted_contexts: list):
+        """Update the entire trusted_contexts list for a user (used for revocation)."""
+        user = self.users.get(user_id)
+        if not user:
+            return
+        user.trusted_contexts = trusted_contexts
+
+    def verify_image_hash(self, stored_hash: str, received_hash: str) -> bool:
+        return hmac.compare_digest(
+            stored_hash.lower().encode(),
+            received_hash.lower().encode(),
+        )
 
     def create_webauthn_registration_challenge(self, user_id: str) -> str:
         """Create a challenge for WebAuthn credential registration."""
@@ -300,8 +410,27 @@ class InMemoryDatabaseService:
         user.biometric_devices.append(device)
         if "biometric" not in user.mfa_methods:
             user.mfa_methods.append("biometric")
+        user.mfa_enabled = True
 
         return device
+
+    def begin_totp_setup(self, user_id: str, encrypted_secret: str):
+        user = self.users.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+        user.totp_pending_secret_encrypted = encrypted_secret
+
+    def confirm_totp_setup(self, user_id: str):
+        user = self.users.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+        if not user.totp_pending_secret_encrypted:
+            raise ValueError("No pending TOTP setup found")
+        user.totp_secret_encrypted = user.totp_pending_secret_encrypted
+        user.totp_pending_secret_encrypted = None
+        if "totp" not in user.mfa_methods:
+            user.mfa_methods.append("totp")
+        user.mfa_enabled = True
 
     def verify_webauthn_assertion(self, user_id: str, credential_id: str, counter: int) -> Optional[BiometricDevice]:
         """Verify WebAuthn assertion and check counter for cloning."""
