@@ -1,45 +1,135 @@
 # Password Manager - Backend
 
-FastAPI backend for zero-knowledge password manager.
+FastAPI backend for the CloudLock zero-knowledge password manager.
 
 ## Setup Instructions
 
 ### 1. Prerequisites
 - Python 3.11+
 
-### 3. Create Virtual Environment
+### 2. Create Virtual Environment
 ```bash
 py -3.11 -m venv .venv
-source venv/bin/activate  # macOS/Linux
-# OR
-venv\Scripts\activate     # Windows
 ```
 
-### 4. Install Dependencies
+Activate it:
+
+```bash
+# macOS/Linux
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+```
+
+### 3. Install Dependencies
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 5. Run Locally
+### 4. Run Locally
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
 If you want to run without AWS resources locally, set `USE_DYNAMODB=false` in `backend/.env`.
 
-Visit http://localhost:8000/docs for API documentation.
+Visit http://localhost:8000/docs for Swagger docs.
 
-## 6. API Testing Guide
+## AWS Setup (DynamoDB Device Trust)
 
-### Test 1: Health Check
-**Endpoint:** `GET /health`
+CloudLock uses DynamoDB to store trusted device fingerprints and authentication audit logs. This enables device recognition across login sessions.
 
-1. Find GET /health
-2. Click "Try it out"
-3. Click "Execute"
+### DynamoDB Table Requirements
 
-**Expected Response (200 OK):**
+Ensure your `PasswordManager-Users` table has:
+- **Table name**: `PasswordManager-Users`
+- **Partition key**: `user_id` (String)
+- **Status**: Active
+- **Region**: Same as your AWS credentials
+
+This table stores user records including device trust contexts (`trusted_contexts` field for remembering authenticated devices).
+
+### Configure Credentials
+
+Set your AWS credentials before running the backend:
+
+```bash
+# Option 1: Environment variables
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+
+# Option 2: AWS CLI config (~/.aws/credentials)
+aws configure
+
+# Option 3: IAM role (if running on EC2/Lambda)
+# Credentials automatically provided by AWS
+```
+
+### Switching Between DynamoDB and In-Memory Storage
+
+**Development (in-memory, data lost on restart):**
+```bash
+echo "USE_DYNAMODB=false" > backend/.env
+```
+
+**Production (persistent DynamoDB):**
+```bash
+echo "USE_DYNAMODB=true" > backend/.env
+```
+
+## API Surface (Current)
+
+### Core
+- `GET /health`
+- `GET /`
+
+### Auth
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/login/mfa/verify`
+- `POST /api/auth/login/image/verify`
+- `GET /api/auth/me`
+- `GET /api/auth/devices/trusted` - List all trusted devices (secured, requires auth token)
+- `DELETE /api/auth/devices/trusted/{device_fingerprint}` - Revoke a specific trusted device (secured, requires auth token)
+- `POST /api/auth/logout`
+- `POST /api/auth/delete-account`
+- `GET /api/auth/admin/users`
+- `GET /api/auth/debug/database-info`
+
+### Vault
+- `POST /api/vault/save`
+- `GET /api/vault/retrieve`
+
+### MFA / WebAuthn
+- `GET /api/mfa/status`
+- `PUT /api/mfa/preferences`
+- `POST /api/mfa/totp/setup/start`
+- `POST /api/mfa/totp/setup/verify`
+- `POST /api/mfa/devices/biometric`
+- `DELETE /api/mfa/devices/biometric/{device_id}`
+- `POST /api/mfa/webauthn/registration-challenge`
+- `POST /api/mfa/webauthn/registration`
+- `POST /api/mfa/webauthn/mfa-challenge`
+- `POST /api/mfa/webauthn/mfa-verify`
+
+## Important Payload Contract Changes
+
+The backend now expects client-derived identifiers/verifiers (zero-knowledge flow), not plaintext email/password.
+
+- Register uses `email_lookup`, optional `username_lookup`, and `auth_verifier`.
+- Login uses `email_lookup` or `username_lookup` plus `auth_verifier`.
+- `GET /api/auth/me` returns `email_lookup` (hashed lookup), not plaintext email.
+
+## Quick API Testing Guide
+
+Use Swagger at http://localhost:8000/docs.
+
+### 1. Health Check
+`GET /health`
+
+Expected:
 ```json
 {
   "status": "healthy",
@@ -48,252 +138,330 @@ Visit http://localhost:8000/docs for API documentation.
 }
 ```
 
----
+### 2. Register User (Zero-Knowledge Contract)
+`POST /api/auth/register`
 
-### Test 2: Register User
-**Endpoint:** `POST /api/auth/register`
-
-1. Find POST /api/auth/register
-2. Click "Try it out"
-3. Copy and paste the following into Request body:
+Example request:
 ```json
 {
-  "email": "alice@example.com",
-  "password": "AlicePass123!",
-  "auth_image_id": "img_001"
+  "email_lookup": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "username_lookup": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+  "auth_verifier": "bXktY2xpZW50LWRlcml2ZWQtdmVyaWZpZXI=",
+  "auth_image_id": "img_001",
+  "mfa_enrollment": {
+    "enable_biometric": false,
+    "enable_totp": false
+  }
 }
 ```
-4. Click "Execute"
 
-**Expected Response (201 Created):**
+Expected shape:
 ```json
 {
   "message": "User registered successfully",
-  "user_id": "123e4567-e89b-12d3-a456-426614174000",
-  "email": "alice@example.com",
+  "user_id": "<uuid>",
   "created_at": 1707953191,
   "email_verification_required": false
 }
 ```
 
----
+### 3. Login User (Branching Response)
+`POST /api/auth/login`
 
-### Test 3: List All Users
-**Endpoint:** `GET /api/auth/admin/users`
-
-1. Find GET /api/auth/admin/users
-2. Click "Try it out"
-3. Click "Execute"
-
-**Expected Response (200 OK):**
+Example request:
 ```json
 {
-  "total_users": 1,
-  "users": [
-    {
-      "user_id": "123e4567-e89b-12d3-a456-426614174000",
-      "email": "alice@example.com",
-      "created_at": 1707953191,
-      "account_status": "active",
-      "last_login": null,
-      "failed_attempts": 0
-    }
-  ]
-}
-```
-
----
-
-### Test 4: Login User
-**Endpoint:** `POST /api/auth/login`
-
-1. Find POST /api/auth/login
-2. Click "Try it out"
-3. Copy and paste the following into Request body:
-```json
-{
-  "email": "alice@example.com",
-  "password": "AlicePass123!",
+  "email_lookup": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "auth_verifier": "bXktY2xpZW50LWRlcml2ZWQtdmVyaWZpZXI=",
   "device_fingerprint": "my_laptop_123"
 }
 ```
-4. Click "Execute"
 
-**Expected Response (200 OK):**
+Possible responses:
+
+1. Direct success (trusted context, no MFA):
 ```json
 {
-  "access_token": "token_abc123-def456-xyz789-ghijkl",
-  "refresh_token": null,
-  "user_id": "123e4567-e89b-12d3-a456-426614174000",
-  "email": "alice@example.com",
-  "requires_mfa": false
+  "access_token": "<jwt>",
+  "token_type": "bearer",
+  "user_id": "<uuid>",
+  "requires_mfa": false,
+  "mfa_types": []
 }
 ```
 
-**⚠️ IMPORTANT:** Save the `access_token` for the following tests!
-
----
-
-### Test 5: Get Current User Info
-**Endpoint:** `GET /api/auth/me`
-
-1. Click the **Authorize** button (top right)
-2. Enter the token from Test 4 (without "Bearer" prefix)
-3. Click "Authorize" and then "Close"
-4. Find GET /api/auth/me
-5. Click "Try it out"
-6. Click "Execute"
-
-**Expected Response (200 OK):**
+2. MFA required:
 ```json
 {
-  "user_id": "123e4567-e89b-12d3-a456-426614174000",
-  "email": "alice@example.com",
+  "access_token": null,
+  "token_type": "bearer",
+  "user_id": "<uuid>",
+  "requires_mfa": true,
+  "mfa_types": ["totp"],
+  "mfa_challenge_token": "<jwt>"
+}
+```
+
+3. Image authentication required:
+```json
+{
+  "access_token": null,
+  "token_type": "bearer",
+  "user_id": "<uuid>",
+  "requires_mfa": false,
+  "mfa_types": [],
+  "requires_image_auth": true,
+  "image_challenge_token": "<jwt>"
+}
+```
+
+### 4. MFA Verify (if required)
+`POST /api/auth/login/mfa/verify`
+
+TOTP example:
+```json
+{
+  "mfa_challenge_token": "<from-login>",
+  "method": "totp",
+  "totp_code": "123456"
+}
+```
+
+Biometric example:
+```json
+{
+  "mfa_challenge_token": "<from-login>",
+  "method": "biometric",
+  "device_id": "device_01"
+}
+```
+
+### 5. Image Verify (if required)
+`POST /api/auth/login/image/verify`
+
+```json
+{
+  "image_challenge_token": "<from-login-or-mfa>",
+  "auth_image_hash": "<sha256-hex>"
+}
+```
+
+### 6. Get Current User
+`GET /api/auth/me` with Bearer token
+
+Expected fields now include lookup hash:
+```json
+{
+  "user_id": "<uuid>",
+  "email_lookup": "<sha256-hex>",
   "created_at": 1707953191,
   "last_login": 1707953250,
   "account_status": "active"
 }
 ```
 
----
+### 7. List Trusted Devices
+`GET /api/auth/devices/trusted` with Bearer token
 
-### Test 6: Save Encrypted Vault
-**Endpoint:** `POST /api/vault/save`
+Returns all devices marked as trusted by the user's account:
+```json
+{
+  "user_id": "<uuid>",
+  "total_trusted_devices": 2,
+  "devices": [
+    {
+      "device_fingerprint": "a1b2c3d4e5f6",
+      "enrolled_at": 1707953191,
+      "expires_at": 1708557991,
+      "days_until_expiry": 7
+    },
+    {
+      "device_fingerprint": "x9y8z7w6v5u4",
+      "enrolled_at": 1707949000,
+      "expires_at": 1708553000,
+      "days_until_expiry": 6
+    }
+  ]
+}
+```
 
-**⚠️ Ensure you're authorized (see Test 5)**
+### 8. Revoke a Trusted Device
+`DELETE /api/auth/devices/trusted/{device_fingerprint}` with Bearer token
 
-1. Find POST /api/vault/save
-2. Click "Try it out"
-3. Copy and paste the following into Request body:
+Example request:
+```bash
+curl -X DELETE http://localhost:8000/api/auth/devices/trusted/a1b2c3d4e5f6 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Expected response:
+```json
+{
+  "status": "revoked",
+  "device_fingerprint": "a1b2c3d4e5f6",
+  "remaining_trusted_devices": 1
+}
+```
+
+**Use case:** User logs into account and wants to revoke an old/compromised device from their trusted list. Next login from that device will require image auth again.
+
+### 9. Save and Retrieve Vault
+Use Bearer token.
+
+Save: `POST /api/vault/save`
 ```json
 {
   "encrypted_vault": "dGVzdGVuY3J5cHRlZGRhdGE="
 }
 ```
-4. Click "Execute"
 
-**Expected Response (200 OK):**
+Retrieve: `GET /api/vault/retrieve`
+
+### 10. MFA Management
+Use Bearer token.
+
+- `GET /api/mfa/status`
+- `PUT /api/mfa/preferences`
+- `POST /api/mfa/totp/setup/start`
+- `POST /api/mfa/totp/setup/verify`
+- `POST /api/mfa/devices/biometric`
+- `DELETE /api/mfa/devices/biometric/{device_id}`
+
+### 11. Authenticator App Enrollment
+
+CloudLock now supports standard TOTP apps such as Google Authenticator, Microsoft Authenticator, Authy, 1Password, and other RFC 6238-compatible apps.
+
+Start setup immediately after signup:
+`POST /api/mfa/totp/setup/start`
+
+Example request:
 ```json
 {
-  "status": "saved",
-  "timestamp": 1707953400
+  "user_id": "<signup-user-id>",
+  "account_name": "user@example.com"
 }
 ```
 
----
-
-### Test 7: Retrieve Vault
-**Endpoint:** `GET /api/vault/retrieve`
-
-**⚠️ Ensure you're authorized (see Test 5)**
-
-1. Find GET /api/vault/retrieve
-2. Click "Try it out"
-3. Click "Execute"
-
-**Expected Response (200 OK):**
+Expected response shape:
 ```json
 {
-  "encrypted_vault": "dGVzdGVuY3J5cHRlZGRhdGE=",
-  "last_modified": 1707953400
+  "setup_token": "<jwt>",
+  "manual_entry_key": "<base32-secret>",
+  "otpauth_uri": "otpauth://totp/CloudLock:user@example.com?...",
+  "issuer": "CloudLock"
 }
 ```
 
----
+Verify setup by submitting the 6-digit code from the authenticator app:
+`POST /api/mfa/totp/setup/verify`
 
-### Test 8: Wrong Password (Error Case)
-**Endpoint:** `POST /api/auth/login`
-
-1. Find POST /api/auth/login
-2. Click "Try it out"
-3. Copy and paste the following into Request body:
+Example request:
 ```json
 {
-  "email": "alice@example.com",
-  "password": "WrongPassword123!",
-  "device_fingerprint": "test_device"
-}
-```
-4. Click "Execute"
-
-**Expected Response (401 Unauthorized):**
-```json
-{
-  "detail": "Invalid email or password"
+  "setup_token": "<from-setup-start>",
+  "totp_code": "123456"
 }
 ```
 
----
-
-### Test 9: Duplicate Email (Error Case)
-**Endpoint:** `POST /api/auth/register`
-
-1. Find POST /api/auth/register
-2. Click "Try it out"
-3. Copy and paste the following into Request body:
+Successful response:
 ```json
 {
-  "email": "alice@example.com",
-  "password": "AnotherPass123!",
-  "auth_image_id": "img_999"
-}
-```
-4. Click "Execute"
-
-**Expected Response (409 Conflict):**
-```json
-{
-  "detail": "User with this email already exists"
+  "status": "enabled",
+  "methods": ["totp"],
+  "enabled": true
 }
 ```
 
----
+### 12. Logout
+`POST /api/auth/logout` with Bearer token
 
-### Test 10: Logout
-**Endpoint:** `POST /api/auth/logout`
+### 13. Debug Endpoints
+- `GET /api/auth/admin/users`
+- `GET /api/auth/debug/database-info`
 
-**⚠️ Ensure you're authorized (see Test 5)**
+## Common Error Cases
 
-1. Find POST /api/auth/logout
-2. Click "Try it out"
-3. Click "Execute"
-
-**Expected Response (200 OK):**
+- Invalid login credentials:
 ```json
 {
-  "message": "Logged out successfully"
+  "detail": "Invalid credentials"
 }
 ```
 
----
-
-### Test 11: Database Debug Info
-**Endpoint:** `GET /api/auth/debug/database-info`
-
-1. Find GET /api/auth/debug/database-info
-2. Click "Try it out"
-3. Click "Execute"
-
-**Expected Response (200 OK):**
+- Invalid or expired token on protected endpoints:
 ```json
 {
-  "total_users": 1,
-  "total_sessions": 0,
-  "total_vaults": 1,
-  "user_emails": [
-    "alice@example.com"
-  ],
-  "users_detail": [
-    {
-      "user_id": "123e4567-e89b-12d3-a456-426614174000",
-      "email": "alice@example.com",
-      "created_at": 1707953191,
-      "account_status": "active",
-      "last_login": 1707953250,
-      "failed_attempts": 1
-    }
-  ]
+  "detail": "Invalid or expired token"
 }
-```    
-            
+```
 
+## Testing WebAuthn & Biometrics on Android Phone
+
+WebAuthn requires a secure context (HTTPS or localhost). To test the biometric authentication flow on your Android phone while developing locally, use ngrok to create a public HTTPS tunnel.
+
+### Prerequisites
+- Android phone connected to same network as your PC
+- [ngrok account and CLI](https://ngrok.com/) installed on your PC
+- Phone has biometric capability (fingerprint, face recognition, or passkey support)
+
+### Setup Steps
+
+1. **Start the backend server:**
+   ```bash
+   cd backend
+   .venv\Scripts\activate  # Windows
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+2. **In a new terminal, tunnel the backend with ngrok:**
+   ```bash
+   ngrok http 8000
+   ```
+   Ngrok will display a public HTTPS URL like `https://abc123.ngrok.io`. Copy this URL.
+
+3. **In another terminal, start the frontend:**
+   ```bash
+   cd ui_framework/cloudlock_ui
+   npm run dev
+   ```
+   Vite will run on `http://localhost:5173`.
+
+4. **In a new terminal, tunnel the frontend with ngrok:**
+   ```bash
+   ngrok http 5173
+   ```
+   Note the frontend HTTPS URL (e.g., `https://def456.ngrok.io`).
+
+5. **Update backend environment variables:**
+   ```bash
+   # In backend/.env, set:
+   WEBAUTHN_RP_ID=abc123.ngrok.io
+   WEBAUTHN_EXPECTED_ORIGINS=https://abc123.ngrok.io,https://def456.ngrok.io
+   ```
+   Stop and restart the backend to pick up the changes.
+
+6. **On your Android phone:**
+   - Open browser and navigate to `https://def456.ngrok.io` (the ngrok frontend URL)
+   - Bypass any certificate warnings (ngrok uses valid HTTPS certs)
+   - Navigate to **Sign Up**
+   - Enable **Biometric MFA** in the MFA setup modal
+   - Complete signup
+
+7. **Enroll biometric credential:**
+   - After signup, the browser will prompt: "Use your fingerprint, face, or passkey?"
+   - Follow the on-screen biometric prompt
+   - System will confirm enrollment once complete
+
+8. **Test biometric login:**
+   - Log out
+   - Log back in with your credentials
+   - When prompted for MFA, select **Biometric**
+   - Authenticate with your fingerprint, face, or pattern
+   - Verify you receive a session token (or image final authentication step if triggered)
+
+### Troubleshooting
+
+- **"Credential error" during enrollment:** Ensure WEBAUTHN_RP_ID matches your ngrok frontend domain exactly
+- **Certificate warning on phone:** This is normal for self-hosted testing; tap "Advanced" and continue
+- **Biometric prompt doesn't appear:** Phone may not have WebAuthn support; check Android version (8+) and device capabilities
+- **Cross-device passkey issues:** ngrok tunnel URL counts as a different origin; credential must be enrolled on the same domain being accessed
