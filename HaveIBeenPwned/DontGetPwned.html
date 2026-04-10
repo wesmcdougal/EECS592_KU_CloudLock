@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIBP Compromise Checker</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --muted: #94a3b8;
+      --text: #e5e7eb;
+      --accent: #3b82f6;
+      --danger: #ef4444;
+      --ok: #22c55e;
+      --border: #1f2937;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(180deg, #0b1220, #111827);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: rgba(17, 24, 39, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 1.8rem;
+    }
+
+    p.sub {
+      margin-top: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin: 20px 0 18px;
+    }
+
+    .tab {
+      flex: 1;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      color: var(--text);
+      padding: 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      color: var(--text);
+      font-size: 1rem;
+      margin-bottom: 14px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      background: var(--accent);
+      color: white;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .result {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: #0b1220;
+      display: none;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    .result.ok {
+      border-color: rgba(34, 197, 94, 0.4);
+    }
+
+    .result.bad {
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    .result.info {
+      border-color: rgba(59, 130, 246, 0.4);
+    }
+
+    .small {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    ul {
+      margin: 8px 0 0 20px;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Compromise Checker</h1>
+    <p class="sub">
+      Check whether an email address appears in known breaches or whether a password has appeared in breached password datasets.
+    </p>
+
+    <div class="tabs">
+      <button class="tab active" id="emailTab" type="button">Email</button>
+      <button class="tab" id="passwordTab" type="button">Password</button>
+    </div>
+
+    <form id="checkerForm">
+      <label for="valueInput" id="inputLabel">Email address</label>
+      <input
+        id="valueInput"
+        type="email"
+        placeholder="name@example.com"
+        autocomplete="off"
+        required
+      />
+      <button id="submitBtn" type="submit">Check</button>
+    </form>
+
+    <div id="result" class="result"></div>
+
+    <div class="small">
+      Replace <code>LAMBDA_FUNCTION_URL_HERE</code> in the script with your Lambda Function URL.
+    </div>
+  </div>
+
+  <script>
+    const LAMBDA_URL = "https://gzb5ckavmunxft4uqfbtc5feue0rsdym.lambda-url.us-east-1.on.aws/";
+
+    let mode = "email";
+
+    const emailTab = document.getElementById("emailTab");
+    const passwordTab = document.getElementById("passwordTab");
+    const input = document.getElementById("valueInput");
+    const label = document.getElementById("inputLabel");
+    const form = document.getElementById("checkerForm");
+    const result = document.getElementById("result");
+    const submitBtn = document.getElementById("submitBtn");
+
+    function setMode(newMode) {
+      mode = newMode;
+      result.style.display = "none";
+      result.className = "result";
+
+      if (mode === "email") {
+        emailTab.classList.add("active");
+        passwordTab.classList.remove("active");
+        label.textContent = "Email address";
+        input.type = "email";
+        input.placeholder = "name@example.com";
+        input.value = "";
+      } else {
+        passwordTab.classList.add("active");
+        emailTab.classList.remove("active");
+        label.textContent = "Password";
+        input.type = "password";
+        input.placeholder = "Enter a password";
+        input.value = "";
+      }
+    }
+
+    emailTab.addEventListener("click", () => setMode("email"));
+    passwordTab.addEventListener("click", () => setMode("password"));
+
+    function showResult(message, type = "info") {
+      result.style.display = "block";
+      result.className = `result ${type}`;
+      result.innerHTML = message;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const value = input.value.trim();
+      if (!value) return;
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Checking...";
+      showResult("Checking...", "info");
+
+      try {
+        const response = await fetch(LAMBDA_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ type: mode, value })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showResult(data.error || "Something went wrong.", "bad");
+          return;
+        }
+
+        if (mode === "email") {
+          if (data.pwned) {
+            let html = `<strong>This email was found in ${data.breachCount} breach(es).</strong>`;
+            if (Array.isArray(data.breaches) && data.breaches.length > 0) {
+              html += "<ul>";
+              for (const breach of data.breaches) {
+                html += `<li><strong>${breach.Name}</strong> — ${breach.BreachDate || "Unknown date"}</li>`;
+              }
+              html += "</ul>";
+            }
+            showResult(html, "bad");
+          } else {
+            showResult("<strong>No breaches were found for this email.</strong>", "ok");
+          }
+        } else {
+          if (data.pwned) {
+            showResult(
+              `<strong>This password has been seen before.</strong><br>Observed count: ${data.count}`,
+              "bad"
+            );
+          } else {
+            showResult("<strong>This password was not found in the Pwned Passwords dataset.</strong>", "ok");
+          }
+        }
+      } catch (err) {
+        showResult("Unable to reach the backend.", "bad");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Check";
+      }
+    });
+  </script>
+</body>
+</html>
