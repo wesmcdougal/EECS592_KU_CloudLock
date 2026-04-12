@@ -7,6 +7,7 @@ import MainPage from "./pages/MainPage";
 import RecoveryPage from "./pages/RecoveryPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
+import KeyfileMfaDemo from "./components/KeyfileMfaDemo";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           )}
         ></Route>
         <Route path="/recovery" element={<RecoveryPage />}></Route>
+        <Route path="/keyfile-mfa-demo" element={<KeyfileMfaDemo />} />
       </Routes>
     </AuthProvider>
   );
