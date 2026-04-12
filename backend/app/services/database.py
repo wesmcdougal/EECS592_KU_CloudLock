@@ -456,6 +456,16 @@ class InMemoryDatabaseService:
         device.last_used_at = int(time.time())
 
         return device
+    
+    def set_keyfile_mfa_hash(self, user_id: str, keyfile_hash: str):
+        user = self.users.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+        user.keyfile_mfa_hash = keyfile_hash
+        # Optionally, add "keyfile" to mfa_methods and enable MFA
+        if "keyfile" not in user.mfa_methods:
+            user.mfa_methods.append("keyfile")
+        user.mfa_enabled = True
 
 
 db = DynamoDatabaseService() if settings.use_dynamodb else InMemoryDatabaseService()

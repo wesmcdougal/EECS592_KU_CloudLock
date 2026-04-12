@@ -52,6 +52,48 @@ from app.services.totp import (
     generate_totp_secret,
     verify_totp_code,
 )
+from app.services.keyfile_mfa import generate_keyfile, hash_keyfile, verify_keyfile
+from fastapi import File, UploadFile
+class KeyfileEnrollRequest(BaseModel):
+    user_id: str
+
+class KeyfileEnrollResponse(BaseModel):
+    status: str
+    message: str
+
+@router.post("/keyfile/enroll", response_model=KeyfileEnrollResponse)
+async def enroll_keyfile_mfa(request: KeyfileEnrollRequest):
+    """Generate a key file for the user and store its hash."""
+    user = db.get_user_by_id(request.user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    keyfile_bytes = generate_keyfile()
+    keyfile_hash = hash_keyfile(keyfile_bytes)
+    db.set_keyfile_mfa_hash(request.user_id, keyfile_hash)
+    # Return the key file as a downloadable response (base64-encoded for demo)
+    encoded = base64.b64encode(keyfile_bytes).decode()
+    return KeyfileEnrollResponse(
+        status="success",
+        message=encoded,
+    )
+
+
+class KeyfileVerifyRequest(BaseModel):
+    user_id: str
+
+class KeyfileVerifyResponse(BaseModel):
+    status: str
+    valid: bool
+
+@router.post("/keyfile/verify", response_model=KeyfileVerifyResponse)
+async def verify_keyfile_mfa(request: KeyfileVerifyRequest, file: UploadFile = File(...)):
+    """Verify uploaded key file for MFA."""
+    user = db.get_user_by_id(request.user_id)
+    if not user or not user.keyfile_mfa_hash:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Key file MFA not enrolled")
+    uploaded_bytes = await file.read()
+    valid = verify_keyfile(uploaded_bytes, user.keyfile_mfa_hash)
+    return KeyfileVerifyResponse(status="ok", valid=valid)
 
 router = APIRouter()
 security = HTTPBearer()

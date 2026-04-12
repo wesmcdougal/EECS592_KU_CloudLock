@@ -245,3 +245,4 @@ class UserInDB(BaseModel):
     totp_pending_secret_encrypted: Optional[str] = None
     session_version:        int = 0
     trusted_contexts:       list = Field(default_factory=list)
+    keyfile_mfa_hash:       Optional[str] = None  # SHA-256 hash of key file for keyfile-based MFA
