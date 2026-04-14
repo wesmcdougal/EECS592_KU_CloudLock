@@ -62,6 +62,11 @@ class InMemoryDatabaseService:
             failed_login_attempts=0,
             mfa_enabled=False,
             mfa_methods=[],
+            recovery_id=None,
+            recovery_salt=None,
+            encrypted_recovery_blob=None,
+            recovery_version=None,
+            recovery_used=False,
         )
         self.users[user.user_id] = user
         self.email_lookup_index[email_lookup] = user.user_id
@@ -467,5 +472,45 @@ class InMemoryDatabaseService:
             user.mfa_methods.append("keyfile")
         user.mfa_enabled = True
 
+    def save_recovery(self, user_id: str, recovery_id: str, recovery_salt: str, encrypted_blob: dict, version: int):
+        user = self.users.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+
+        user.recovery_id = recovery_id
+        user.recovery_salt = recovery_salt
+        user.encrypted_recovery_blob = encrypted_blob
+        user.recovery_version = version
+        user.recovery_used = False
+
+
+    def get_recovery(self, user_id: str):
+        user = self.users.get(user_id)
+        if not user or not user.encrypted_recovery_blob:
+            return None
+
+        return {
+            "userId": user.user_id,
+            "recoveryId": user.recovery_id,
+            "recoverySalt": user.recovery_salt,
+            "encryptedRecoveryBlob": user.encrypted_recovery_blob,
+            "version": user.recovery_version,
+            "isUsed": user.recovery_used,
+        }
+
+
+    def rotate_recovery(self, user_id: str, old_recovery_id: str, new_recovery_id: str, new_salt: str, new_blob: dict, version: int):
+        user = self.users.get(user_id)
+        if not user:
+            raise ValueError("User not found")
+
+        if user.recovery_id != old_recovery_id:
+            raise ValueError("Stale recovery token")
+
+        user.recovery_id = new_recovery_id
+        user.recovery_salt = new_salt
+        user.encrypted_recovery_blob = new_blob
+        user.recovery_version = version
+        user.recovery_used = False
 
 db = DynamoDatabaseService() if settings.use_dynamodb else InMemoryDatabaseService()

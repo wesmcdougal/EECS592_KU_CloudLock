@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "html5-qrcode": "^2.3.8",
     "prop-types": "^15.8.1",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",

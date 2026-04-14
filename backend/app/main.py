@@ -19,7 +19,7 @@ from app.config import settings
 from app.models.schemas import HealthResponse
 
 # Import routers
-from app.api import auth, mfa, vault
+from app.api import auth, mfa, vault, recovery
 
 # Create FastAPI app
 app = FastAPI(
@@ -43,6 +43,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(vault.router, prefix="/api/vault", tags=["Vault"])
 app.include_router(mfa.router, prefix="/api/mfa", tags=["MFA"])
+app.include_router(recovery.router)
 
 # Health check endpoint
 @app.get("/health", response_model=HealthResponse)

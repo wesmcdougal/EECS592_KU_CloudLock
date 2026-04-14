@@ -61,6 +61,9 @@ class KeyfileEnrollResponse(BaseModel):
     status: str
     message: str
 
+router = APIRouter()
+security = HTTPBearer()
+
 @router.post("/keyfile/enroll", response_model=KeyfileEnrollResponse)
 async def enroll_keyfile_mfa(request: KeyfileEnrollRequest):
     """Generate a key file for the user and store its hash."""
@@ -94,10 +97,6 @@ async def verify_keyfile_mfa(request: KeyfileVerifyRequest, file: UploadFile = F
     uploaded_bytes = await file.read()
     valid = verify_keyfile(uploaded_bytes, user.keyfile_mfa_hash)
     return KeyfileVerifyResponse(status="ok", valid=valid)
-
-router = APIRouter()
-security = HTTPBearer()
-
 
 class UserIdRequest(BaseModel):
     user_id: str
