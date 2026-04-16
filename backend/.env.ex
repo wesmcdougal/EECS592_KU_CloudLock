@@ -3,7 +3,7 @@
 AWS_REGION=us-east-1
 COGNITO_USER_POOL_ID=us-east-1_MKASHnl9X
 COGNITO_CLIENT_ID=j5dsch3f67tp4tj04p3h5icd0
-USE_DYNAMODB=true
+USE_DYNAMODB=false
 USERS_TABLE=PasswordManager-Users
 DEVICES_TABLE=PasswordManager-Devices-dev
 AUDIT_TABLE=PasswordManager-AuditLogs-dev
