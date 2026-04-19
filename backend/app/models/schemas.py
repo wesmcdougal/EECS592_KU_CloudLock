@@ -281,3 +281,17 @@ class CompleteRecoveryRequest(BaseModel):
     newRecoverySalt: str
     newEncryptedRecoveryBlob: EncryptedBlob
     version: int
+
+class RecoverySessionRequest(BaseModel):
+    userId: UUID
+    newRecoveryId: UUID
+
+class RecoverySessionResponse(BaseModel):
+    access_token: str
+    user_id: str
+
+class MfaImageChallengeRequest(BaseModel):
+    mfa_challenge_token: str
+
+class MfaImageChallengeResponse(BaseModel):
+    image_challenge_token: str

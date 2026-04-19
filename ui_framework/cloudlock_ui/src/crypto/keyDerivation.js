@@ -40,6 +40,17 @@ export async function deriveKey(password, salt) {
 export const deriveMasterKey = deriveKey;
 
 /**
+ * Derive the vault master key and return the raw 256-bit bytes (Uint8Array).
+ * Used only client-side during registration to encrypt the recovery blob.
+ * Never transmitted to the server.
+ */
+export async function deriveMasterKeyRaw(password, salt) {
+  const key = await _pbkdf2Key(password, salt, true);
+  const raw = await crypto.subtle.exportKey("raw", key);
+  return new Uint8Array(raw);
+}
+
+/**
  * Derive a separate authentication verifier from password + email.
  * Purpose: replace plaintext password in auth API calls so the server
  * never receives or stores the real password — only a derived verifier.

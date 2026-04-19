@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     cognito_user_pool_id: Optional[str] = None
     cognito_client_id: Optional[str] = None
     kms_key_id: Optional[str] = None
-    use_dynamodb: bool = True
+    use_dynamodb: bool = False
     webauthn_rp_id: str = "127.0.0.1"
     webauthn_expected_origins: str = "http://127.0.0.1:5173,http://localhost:5173"
     

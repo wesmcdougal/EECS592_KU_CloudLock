@@ -13,10 +13,10 @@
  * - Added for FR24.2 / FR24.5 image MFA final auth step
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { extractAndHashSecret } from "../crypto/imageAuth";
 
-export default function FinalAuthStep({ onConfirm, onCancel, isLoading }) {
+export default function FinalAuthStep({ onConfirm, onCancel, isLoading, authError }) {
     const [selectedFile, setSelectedFile] = useState(null);
     const [previewUrl, setPreviewUrl] = useState(null);
     const [extractionState, setExtractionState] = useState("idle"); // idle | extracting | ready | error
@@ -55,12 +55,23 @@ export default function FinalAuthStep({ onConfirm, onCancel, isLoading }) {
         }
     }
 
-    function handleConfirm() {
-        if (extractionState !== "ready" || !extractedHash) {
-            return;
+    // Auto-submit as soon as extraction succeeds — no manual Confirm step needed
+    useEffect(() => {
+        if (extractionState === "ready" && extractedHash) {
+            onConfirm(extractedHash);
         }
-        onConfirm(extractedHash);
-    }
+    }, [extractionState, extractedHash]);
+
+    // Reset local state when the parent reports an auth failure
+    useEffect(() => {
+        if (authError) {
+            setExtractionState("error");
+            setErrorMessage(authError);
+            setExtractedHash(null);
+            setSelectedFile(null);
+            setPreviewUrl(null);
+        }
+    }, [authError]);
 
     return (
         <div className="final-auth-step">
@@ -109,7 +120,7 @@ export default function FinalAuthStep({ onConfirm, onCancel, isLoading }) {
             )}
 
             {extractionState === "ready" && (
-                <p className="final-auth-status final-auth-status-ready">Image verified. Ready to authenticate.</p>
+                <p className="final-auth-status final-auth-status-ready">{isLoading ? "Signing in…" : "Image verified."}</p>
             )}
 
             {errorMessage && (
@@ -117,14 +128,6 @@ export default function FinalAuthStep({ onConfirm, onCancel, isLoading }) {
             )}
 
             <div className="final-auth-actions">
-                <button
-                    type="button"
-                    className="action-button"
-                    onClick={handleConfirm}
-                    disabled={extractionState !== "ready" || isLoading}
-                >
-                    {isLoading ? "Verifying…" : "Confirm"}
-                </button>
                 <button
                     type="button"
                     className="action-button"

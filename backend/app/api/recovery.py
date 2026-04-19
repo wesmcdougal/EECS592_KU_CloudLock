@@ -2,22 +2,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from app.config import settings
 from app.models.schemas import (
     CompleteRecoveryRequest,
     CreateRecoveryRequest,
     RecoveryResponse,
+    RecoverySessionRequest,
+    RecoverySessionResponse,
 )
-from app.services.database import InMemoryDatabaseService
-from app.services.dynamo import DynamoDatabaseService
+from app.services.database import db
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
-
-
-# Simple service selection matching the project's storage mode.
-# If your app already exposes a shared db service instance elsewhere,
-# switch this to import that instead.
-db = DynamoDatabaseService() if settings.use_dynamodb else InMemoryDatabaseService()
 
 
 @router.post("")
@@ -79,3 +73,30 @@ async def complete_recovery(payload: CompleteRecoveryRequest):
         raise HTTPException(status_code=500, detail="Failed to rotate recovery record") from exc
 
     return {"ok": True, "mustGenerateNewQr": True}
+
+
+@router.post("/session", response_model=RecoverySessionResponse)
+async def claim_recovery_session(payload: RecoverySessionRequest):
+    """
+    Issue a session token after successful QR recovery.
+    Verifies the newRecoveryId matches the current stored record, proving
+    the client possessed the original valid QR and completed rotation.
+    """
+    user_id = str(payload.userId)
+    new_recovery_id = str(payload.newRecoveryId)
+
+    user = db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    record = db.get_recovery(user_id)
+    if not record or record.get("recoveryId") != new_recovery_id:
+        raise HTTPException(status_code=401, detail="Recovery session claim invalid")
+
+    try:
+        access_token = db.create_session(user_id)
+        db.update_last_login(user_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to create session") from exc
+
+    return RecoverySessionResponse(access_token=access_token, user_id=user_id)

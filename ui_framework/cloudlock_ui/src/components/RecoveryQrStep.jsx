@@ -103,7 +103,7 @@ export default function RecoveryQrStep({
 
       <img src={qrImageUrl} alt="Recovery QR code" />
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 16, justifyContent: 'center' }}>
         <button type="button" onClick={handleDownload}>Download QR</button>
         <button type="button" onClick={() => window.print()}>Print QR</button>
       </div>

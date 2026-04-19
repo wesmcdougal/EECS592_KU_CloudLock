@@ -94,6 +94,12 @@ export async function verifyImageAuth({ imageChallengeToken, authImageHash }) {
   return response;
 }
 
+export async function requestImageChallengeFromMfa({ mfaChallengeToken }) {
+  return apiService.post('/auth/mfa/image-challenge', {
+    mfa_challenge_token: mfaChallengeToken,
+  });
+}
+
 export async function logout() {
   const response = await apiService.post('/auth/logout', {});
   setAccessToken(null);

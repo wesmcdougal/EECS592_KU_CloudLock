@@ -17,7 +17,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import eyeOpen from "../assets/eyeopen.png";
 import eyeClose from "../assets/eyeclose.png";
-import { login, verifyLoginMfa, verifyImageAuth } from "../api/authApi";
+import { login, verifyLoginMfa, verifyImageAuth, requestImageChallengeFromMfa } from "../api/authApi";
 import { getWebAuthnMfaChallenge, getWebAuthnAssertion } from "../api/webauthnApi";
 import { deriveKey } from "../crypto/keyDerivation";
 import { clearCachedEncryptedVault } from "../crypto/storageFormat";
@@ -60,6 +60,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitButtonState, setSubmitButtonState] = useState("");
   const [pendingMfa, setPendingMfa] = useState(null);
+  const [mfaView, setMfaView] = useState("choose"); // 'choose' | 'totp'
   const [totpCode, setTotpCode] = useState("");
   const [isMfaVerifying, setIsMfaVerifying] = useState(false);
   const [pendingImageAuth, setPendingImageAuth] = useState(null); // { imageChallengeToken }
@@ -70,6 +71,10 @@ export default function Login() {
   const signupMessage =
     location.state?.signupSuccess
     ? "Account created successfully. Please log in."
+    : "";
+  const recoveryMessage =
+    location.state?.recovered
+    ? "Recovery verified. Please log in to continue."
     : "";
   const isFormValid = email.trim() && password.trim();
 
@@ -133,8 +138,9 @@ export default function Login() {
           challengeToken: response.mfa_challenge_token,
           methods: response.mfa_types || [],
         });
+        setMfaView("choose");
         setSubmitButtonState("");
-        setMfaMessage("MFA verification required.");
+        setMfaMessage("");
         return;
       }
 
@@ -190,6 +196,7 @@ export default function Login() {
       if (response?.requires_image_auth && response?.image_challenge_token) {
         setPendingMfa(null);
         setTotpCode("");
+        setMfaView("choose");
         setPendingImageAuth({ imageChallengeToken: response.image_challenge_token });
         return;
       }
@@ -197,6 +204,7 @@ export default function Login() {
       if (response?.access_token) {
         setPendingMfa(null);
         setTotpCode("");
+        setMfaView("choose");
         await completeSuccessfulLogin(response.access_token);
         return;
       }
@@ -237,6 +245,9 @@ export default function Login() {
       <div className="login-form">
         {signupMessage && (
           <p className="success-message">{signupMessage}</p>
+        )}
+        {recoveryMessage && (
+          <p className="success-message">{recoveryMessage}</p>
         )}
         {message && (
           <p className="error-message">{message}</p>
@@ -284,67 +295,122 @@ export default function Login() {
       {pendingMfa && (
         <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="MFA verification">
           <div className="entity-modal">
-            <h2>MFA Verification</h2>
-            <p>Complete a second factor to finish login.</p>
+            <h2>Verify Your Identity</h2>
 
             {mfaMessage && (
               <p className="error-message">{mfaMessage}</p>
             )}
 
-            {pendingMfa.methods.includes("biometric") && (
-              <button
-                type="button"
-                className="action-button entity-modal-button"
-                data-label="VERIFY BIOMETRIC"
-                aria-label="Verify biometric MFA"
-                disabled={isMfaVerifying}
-                onClick={() => handleVerifyMfa("biometric")}
-              />
+            {mfaView === "choose" && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+                <p style={{ margin: '0 0 8px', color: 'rgba(255,255,255,0.7)' }}>Choose a verification method to continue.</p>
+
+                <button
+                  type="button"
+                  className="action-button entity-modal-button"
+                  data-label={isMfaVerifying ? "VERIFYING…" : "BIOMETRIC / PIN"}
+                  aria-label="Use biometric or PIN authentication"
+                  disabled={isMfaVerifying}
+                  style={{ width: 'auto', padding: '0 24px' }}
+                  onClick={() => {
+                    if (!pendingMfa.methods.includes("biometric")) {
+                      setMfaMessage("No biometric or PIN has been set up for this account.");
+                      return;
+                    }
+                    handleVerifyMfa("biometric");
+                  }}
+                />
+
+                {pendingMfa.methods.includes("totp") && (
+                  <button
+                    type="button"
+                    className="action-button entity-modal-button"
+                    data-label="AUTHENTICATOR APP"
+                    aria-label="Use authenticator app"
+                    disabled={isMfaVerifying}
+                    style={{ width: 'auto', padding: '0 24px' }}
+                    onClick={() => { setMfaView("totp"); setMfaMessage(""); }}
+                  />
+                )}
+
+                <button
+                  type="button"
+                  className="action-button entity-modal-button"
+                  data-label="IMAGE AUTHENTICATION"
+                  aria-label="Use image authentication"
+                  disabled={isMfaVerifying}
+                  style={{ width: 'auto', padding: '0 24px' }}
+                  onClick={async () => {
+                    setIsMfaVerifying(true);
+                    setMfaMessage("");
+                    try {
+                      const result = await requestImageChallengeFromMfa({ mfaChallengeToken: pendingMfa.challengeToken });
+                      setPendingMfa(null);
+                      setMfaView("choose");
+                      setPendingImageAuth({ imageChallengeToken: result.image_challenge_token });
+                    } catch (err) {
+                      setMfaMessage("Could not start image authentication: " + (err?.message || err));
+                    } finally {
+                      setIsMfaVerifying(false);
+                    }
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className="action-button entity-modal-button"
+                  data-label="CANCEL"
+                  aria-label="Cancel MFA verification"
+                  disabled={isMfaVerifying}
+                  style={{ width: 'auto', padding: '0 24px' }}
+                  onClick={() => { setPendingMfa(null); setMfaMessage(""); setTotpCode(""); setMfaView("choose"); }}
+                />
+              </div>
             )}
 
-            {pendingMfa.methods.includes("totp") && (
-              <>
+            {mfaView === "totp" && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+                <p style={{ margin: '0 0 8px', color: 'rgba(255,255,255,0.7)' }}>Enter the 6-digit code from your authenticator app.</p>
                 <input
                   type="text"
+                  inputMode="numeric"
                   placeholder="Enter 6-digit code"
                   value={totpCode}
-                  onChange={(event) => setTotpCode(event.target.value)}
+                  onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))}
                   maxLength={6}
+                  autoFocus
                 />
                 <button
                   type="button"
                   className="action-button entity-modal-button"
-                  data-label="VERIFY CODE"
-                  aria-label="Verify TOTP MFA"
+                  data-label={isMfaVerifying ? "VERIFYING…" : "VERIFY CODE"}
+                  aria-label="Verify TOTP code"
                   disabled={isMfaVerifying || totpCode.trim().length !== 6}
+                  style={{ width: 'auto', padding: '0 24px' }}
                   onClick={() => handleVerifyMfa("totp")}
                 />
-              </>
+                <button
+                  type="button"
+                  className="action-button entity-modal-button"
+                  data-label="BACK"
+                  aria-label="Back to method selection"
+                  disabled={isMfaVerifying}
+                  onClick={() => { setMfaView("choose"); setMfaMessage(""); setTotpCode(""); }}
+                  style={{ width: 'auto', padding: '0 24px', opacity: 0.6 }}
+                />
+              </div>
             )}
-
-            <button
-              type="button"
-              className="action-button entity-modal-button"
-              data-label="CANCEL"
-              aria-label="Cancel MFA verification"
-              disabled={isMfaVerifying}
-              onClick={() => {
-                setPendingMfa(null);
-                setMfaMessage("");
-                setTotpCode("");
-              }}
-            />
           </div>
         </div>
       )}
       {pendingImageAuth && (
         <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="Final authentication">
           <div className="entity-modal">
-            {imageMfaMessage && <p className="error-message">{imageMfaMessage}</p>}
             <FinalAuthStep
               onConfirm={handleImageAuthConfirm}
               onCancel={() => { setPendingImageAuth(null); setImageMfaMessage(""); }}
               isLoading={isImageVerifying}
+              authError={imageMfaMessage}
             />
           </div>
         </div>

@@ -1,3 +1,17 @@
+export async function claimRecoverySession({ userId, newRecoveryId }) {
+  const response = await fetch('/api/recovery/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, newRecoveryId }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to establish recovery session.');
+  }
+
+  return response.json();
+}
+
 export async function createRecoveryRecord(body) {
   const response = await fetch('/api/recovery', {
     method: 'POST',

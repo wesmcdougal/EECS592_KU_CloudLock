@@ -24,6 +24,8 @@ import { getWebAuthnRegistrationChallenge, triggerWebAuthnBrowserPrompt, submitW
 import { generateStrongPassword } from '../crypto/passwordGenerator';
 import { getPasswordStrength } from '../crypto/passwordStrength';
 import { embedSecretInImage, generateImageSecret } from '../crypto/imageAuth';
+import { deriveMasterKeyRaw } from '../crypto/keyDerivation';
+import RecoveryQrStep from './RecoveryQrStep';
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -53,6 +55,12 @@ export default function SignUp() {
     isVerifying: false,
     error: '',
   });
+  const [recoveryQrState, setRecoveryQrState] = useState({
+    isOpen: false,
+    userId: null,
+    masterKeyRaw: null,
+    username: null,
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitButtonState, setSubmitButtonState] = useState('');
@@ -64,7 +72,7 @@ export default function SignUp() {
   const passwordValid = form.password.trim().length > 0 && passwordStrength.label === 'Very Strong';
   const confirmPasswordValid = form.confirmPassword.trim().length > 0 && passwordsMatch;
   const recoveryValid = form.recovery.trim().length > 0;
-  const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && form.recovery.trim() && passwordsMatch && passwordStrength.label === 'Very Strong' && !!imageHash;
+  const isFormValid = form.email.trim() && form.username.trim() && form.password.trim() && form.confirmPassword.trim() && passwordsMatch && passwordStrength.label === 'Very Strong' && !!imageHash;
   const [generatedPassword, setGeneratedPassword] = useState('');
 
   function handleGeneratePassword() {
@@ -100,6 +108,10 @@ export default function SignUp() {
         username,
       }
     });
+  }
+
+  function showRecoveryQr(userId, masterKeyRaw, username) {
+    setRecoveryQrState({ isOpen: true, userId, masterKeyRaw, username });
   }
 
   async function beginTotpEnrollment(userId, accountName) {
@@ -150,9 +162,9 @@ export default function SignUp() {
         error: '',
       });
 
-      const username = pendingSignupNavigation.username;
+      const { username, userId, masterKeyRaw } = pendingSignupNavigation;
       setPendingSignupNavigation(null);
-      completeSignupNavigation(username);
+      showRecoveryQr(userId, masterKeyRaw, username);
     } catch (err) {
       setTotpSetupState((previous) => ({
         ...previous,
@@ -217,8 +229,8 @@ export default function SignUp() {
   async function handleSubmit(event) {
     event.preventDefault();
 
-    if (!form.email.trim() || !form.username.trim() || !form.password.trim() || !form.confirmPassword.trim() || !form.recovery.trim()) {
-      setMessage('Please fill in all fields, including recovery info.');
+    if (!form.email.trim() || !form.username.trim() || !form.password.trim() || !form.confirmPassword.trim()) {
+      setMessage('Please fill in all fields.');
       return;
     }
 
@@ -254,6 +266,9 @@ export default function SignUp() {
       if (response?.user_id) {
         localStorage.setItem("cloudlock_username", form.username.trim());
 
+        // Derive the master key raw bytes for the recovery QR (client-side only, never sent to server).
+        const masterKeyRaw = await deriveMasterKeyRaw(form.password, form.email.trim().toLowerCase());
+
         // Step 2: Submit the already-captured WebAuthn credential to the backend.
         if (mfaEnrollment.enableBiometric && pendingBiometric) {
           try {
@@ -271,7 +286,7 @@ export default function SignUp() {
         }
 
         if (mfaEnrollment.enableTotp) {
-          setPendingSignupNavigation({ username: form.username.trim() });
+          setPendingSignupNavigation({ username: form.username.trim(), userId: response.user_id, masterKeyRaw });
           try {
             await beginTotpEnrollment(response.user_id, form.email.trim().toLowerCase());
             return;
@@ -283,7 +298,7 @@ export default function SignUp() {
           }
         }
 
-        completeSignupNavigation(form.username.trim());
+        showRecoveryQr(response.user_id, masterKeyRaw, form.username.trim());
       } else {
         setMessage(response?.error || "Signup failed. Please try again.");
         setSubmitButtonState('');
@@ -392,9 +407,10 @@ export default function SignUp() {
       <button
         type="button"
         className="action-button"
+        style={{ width: 'auto', padding: '0 20px' }}
         onClick={handleGeneratePassword}
       >
-        GENERATE?
+        GENERATE STRONG PASSWORD
       </button>
       </div>
 
@@ -402,20 +418,11 @@ export default function SignUp() {
         <button
           type="button"
           className={`action-button${imageHash ? ' mfa-option-selected' : ''}`}
+          style={{ width: 'auto', padding: '0 20px' }}
           onClick={() => setIsMfaModalOpen(true)}
         >
           {imageHash ? 'MFA CONFIGURED ✓' : 'SET UP MFA'}
         </button>
-      </div>
-
-      <div className={`signup-input-row ${recoveryValid ? 'is-valid' : ''}`.trim()}>
-        <span className="signup-field-check" aria-hidden="true">✓</span>
-        <input
-          type="text"
-          placeholder="Recovery Key or Security Answer"
-          value={form.recovery}
-          onChange={e => setForm({ ...form, recovery: e.target.value })}
-        />
       </div>
 
       <button
@@ -645,6 +652,20 @@ export default function SignUp() {
               }}
             />
           </div>
+        </div>
+      </div>
+    )}
+    {recoveryQrState.isOpen && (
+      <div className="entity-modal-backdrop" role="dialog" aria-modal="true" aria-label="Recovery QR code">
+        <div className="entity-modal">
+          <RecoveryQrStep
+            userId={recoveryQrState.userId}
+            masterKeyRaw={recoveryQrState.masterKeyRaw}
+            onComplete={() => {
+              setRecoveryQrState({ isOpen: false, userId: null, masterKeyRaw: null, username: null });
+              completeSignupNavigation(recoveryQrState.username);
+            }}
+          />
         </div>
       </div>
     )}
