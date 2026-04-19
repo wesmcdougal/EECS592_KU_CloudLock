@@ -914,6 +914,14 @@ button:disabled {
   .department-row-actions {
     justify-content: flex-start;
   }
+
+  .main-entities-column {
+    width: min(72vw, 920px);
+  }
+
+  .main-search-area {
+    width: min(40vw, 320px);
+  }
 }
 
 .entity-modal input:not([type="checkbox"]):not([type="radio"]) {
@@ -1121,4 +1129,152 @@ button:disabled {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
+}
+
+/* ── Mobile / narrow-screen responsive ─────────────────────────── */
+@media (max-width: 600px) {
+
+  /* Typography */
+  h1 { font-size: 2em; }
+
+  /* Forms — allow full width on small screens */
+  .login-form,
+  .signup-form {
+    max-width: 100%;
+    width: 100%;
+    padding: 0 4px;
+    box-sizing: border-box;
+  }
+
+  /* Home page buttons — stack vertically */
+  .home-buttons {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .home-intro-gif {
+    max-height: 180px;
+  }
+
+  /* Main page — switch from side-by-side columns to single column */
+  .main-page {
+    padding: 12px;
+  }
+
+  .main-header {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    row-gap: 8px;
+    min-height: unset;
+  }
+
+  .main-header-left,
+  .main-header-center,
+  .main-header-right {
+    justify-content: center;
+  }
+
+  .main-account-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .main-search-area {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  .preview-message {
+    max-width: 100%;
+    font-size: 0.82rem;
+  }
+
+  .main-content {
+    flex-direction: column;
+    padding: 12px 0 84px;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  .main-categories-column {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .main-categories-column .main-section-title {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .main-entities-column {
+    width: 100%;
+  }
+
+  /* Entity/password table — collapse to card stack */
+  .category-entity-table-header {
+    display: none;
+  }
+
+  .category-entity-table-row {
+    grid-template-columns: 1fr;
+    height: auto;
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .category-entity-row-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .department-table-header {
+    display: none;
+  }
+
+  .department-table-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .department-row-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  /* Modals — full-width on mobile */
+  .entity-modal {
+    width: min(96vw, 360px);
+    padding: 16px;
+  }
+
+  .add-entry-modal {
+    width: 96vw;
+  }
+
+  .add-modal-tabs {
+    flex-wrap: wrap;
+  }
+
+  /* MFA / action buttons — let them fill available width */
+  .entity-modal-button {
+    width: auto;
+    min-width: 100px;
+    padding: 0 16px;
+  }
+
+  /* delete account button */
+  .delete-account-button {
+    width: auto;
+    padding: 0 16px;
+  }
+
+  /* Recovery QR page */
+  .recovery-qr-page {
+    padding: 1.5rem 1rem;
+  }
 }

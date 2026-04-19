@@ -18,3 +18,18 @@ export async function decryptMasterKeyWithRecovery(encryptedMasterKey, recoveryI
   const recoveryKey = await deriveKey(recoveryInfo, salt);
   return decryptData(encryptedMasterKey, recoveryKey);
 }
+
+// Optional helper for importing recovered raw master key bytes back into Web Crypto
+export async function importRecoveredMasterKey(masterKeyRaw) {
+  const bytes = masterKeyRaw instanceof Uint8Array
+    ? masterKeyRaw
+    : new Uint8Array(masterKeyRaw);
+
+  return crypto.subtle.importKey(
+    'raw',
+    bytes,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+}

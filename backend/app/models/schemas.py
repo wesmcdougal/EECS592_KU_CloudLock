@@ -14,6 +14,7 @@ Revision History:
 
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional
+from uuid import UUID
 
 
 class MfaEnrollmentPreference(BaseModel):
@@ -246,3 +247,51 @@ class UserInDB(BaseModel):
     session_version:        int = 0
     trusted_contexts:       list = Field(default_factory=list)
     keyfile_mfa_hash:       Optional[str] = None  # SHA-256 hash of key file for keyfile-based MFA
+    recovery_id:            Optional[str] = None
+    recovery_salt:          Optional[str] = None
+    encrypted_recovery_blob: Optional[dict] = None
+    recovery_version:       Optional[int] = None
+    recovery_used:          bool = False
+
+# ============ RECOVERY ============
+
+class EncryptedBlob(BaseModel):
+    iv: list[int]
+    data: list[int]
+
+class CreateRecoveryRequest(BaseModel):
+    userId: UUID
+    recoveryId: UUID
+    recoverySalt: str
+    encryptedRecoveryBlob: EncryptedBlob
+    version: int
+
+class RecoveryResponse(BaseModel):
+    userId: UUID
+    recoveryId: UUID
+    recoverySalt: str
+    encryptedRecoveryBlob: EncryptedBlob
+    version: int
+    isUsed: bool
+
+class CompleteRecoveryRequest(BaseModel):
+    userId: UUID
+    oldRecoveryId: UUID
+    newRecoveryId: UUID
+    newRecoverySalt: str
+    newEncryptedRecoveryBlob: EncryptedBlob
+    version: int
+
+class RecoverySessionRequest(BaseModel):
+    userId: UUID
+    newRecoveryId: UUID
+
+class RecoverySessionResponse(BaseModel):
+    access_token: str
+    user_id: str
+
+class MfaImageChallengeRequest(BaseModel):
+    mfa_challenge_token: str
+
+class MfaImageChallengeResponse(BaseModel):
+    image_challenge_token: str

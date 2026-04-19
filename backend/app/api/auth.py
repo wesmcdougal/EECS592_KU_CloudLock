@@ -26,6 +26,8 @@ from app.models.schemas import (
     DeleteAccountResponse,
     ImageVerifyRequest,
     ImageVerifyResponse,
+    MfaImageChallengeRequest,
+    MfaImageChallengeResponse,
     MfaLoginVerifyRequest,
     MfaLoginVerifyResponse,
     RegisterRequest,
@@ -155,6 +157,34 @@ async def login(request: LoginRequest):
         requires_mfa=False,
         mfa_types=[],
     )
+
+
+@router.post("/mfa/image-challenge", response_model=MfaImageChallengeResponse)
+async def request_image_challenge_from_mfa(request: MfaImageChallengeRequest):
+    """
+    Exchange a valid MFA challenge token for an image challenge token.
+    Allows users to choose image authentication as an alternative MFA path.
+    """
+    challenge = db.verify_mfa_challenge(request.mfa_challenge_token)
+    if not challenge:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="MFA challenge invalid or expired",
+        )
+
+    user_id = challenge.get("user_id")
+    user = db.get_user_by_id(user_id)
+    if not user or user.account_status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
+
+    image_challenge_token = db.create_image_challenge(
+        user_id,
+        device_fingerprint_hash=challenge.get("device_fingerprint_hash"),
+    )
+    return MfaImageChallengeResponse(image_challenge_token=image_challenge_token)
 
 
 @router.post("/login/mfa/verify", response_model=MfaLoginVerifyResponse)

@@ -140,6 +140,11 @@ class DynamoDatabaseService:
             "trusted_contexts":     [],
             "encrypted_vault":      None,
             "vault_last_modified":  None,
+            "recovery_id": None,
+            "recovery_salt": None,
+            "encrypted_recovery_blob": None,
+            "recovery_version": None,
+            "recovery_used": False,
         }
 
         try:
@@ -692,3 +697,59 @@ class DynamoDatabaseService:
         except (ClientError, BotoCoreError) as error:
             logger.exception("DynamoDB healthcheck failed: %s", error)
             return False
+    
+    def save_recovery(self, user_id, recovery_id, recovery_salt, encrypted_blob, version):
+        self.table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="""
+                SET recovery_id = :rid,
+                    recovery_salt = :salt,
+                    encrypted_recovery_blob = :blob,
+                    recovery_version = :version,
+                    recovery_used = :used
+            """,
+            ExpressionAttributeValues={
+                ":rid": recovery_id,
+                ":salt": recovery_salt,
+                ":blob": encrypted_blob,
+                ":version": version,
+                ":used": False,
+            },
+        )
+
+    def get_recovery(self, user_id):
+        response = self.table.get_item(Key={"user_id": user_id})
+        item = response.get("Item")
+
+        if not item or not item.get("encrypted_recovery_blob"):
+            return None
+
+        return {
+            "userId": item["user_id"],
+            "recoveryId": item.get("recovery_id"),
+            "recoverySalt": item.get("recovery_salt"),
+            "encryptedRecoveryBlob": item.get("encrypted_recovery_blob"),
+            "version": item.get("recovery_version"),
+            "isUsed": item.get("recovery_used", False),
+        }
+    
+    def rotate_recovery(self, user_id, old_recovery_id, new_recovery_id, new_salt, new_blob, version):
+        self.table.update_item(
+            Key={"user_id": user_id},
+            ConditionExpression="recovery_id = :old",
+            UpdateExpression="""
+                SET recovery_id = :new,
+                    recovery_salt = :salt,
+                    encrypted_recovery_blob = :blob,
+                    recovery_version = :version,
+                    recovery_used = :used
+            """,
+            ExpressionAttributeValues={
+                ":old": old_recovery_id,
+                ":new": new_recovery_id,
+                ":salt": new_salt,
+                ":blob": new_blob,
+                ":version": version,
+                ":used": False,
+            },
+        )
