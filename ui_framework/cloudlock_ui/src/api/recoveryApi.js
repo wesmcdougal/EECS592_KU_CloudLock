@@ -1,3 +1,9 @@
+/*
+Recovery API Service
+Provides functions to interact with the recovery-related endpoints of the backend API.
+Handles creating recovery sessions, managing recovery records, and rotating recovery credentials.
+*/
+
 export async function claimRecoverySession({ userId, newRecoveryId }) {
   const response = await fetch('/api/recovery/session', {
     method: 'POST',

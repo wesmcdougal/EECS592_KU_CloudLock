@@ -1,3 +1,9 @@
+/*
+Password Strength Evaluation Utility
+This module provides a function to evaluate the strength of a password based on various criteria such as length, character variety, and common patterns.
+It returns a score, label, percentage, and feedback for improving the password.
+*/
+
 export function getPasswordStrength(password) {
   const value = password || '';
   let score = 0;

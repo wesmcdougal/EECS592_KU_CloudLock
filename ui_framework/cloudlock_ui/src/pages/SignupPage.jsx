@@ -1,3 +1,8 @@
+/*
+Signup Page Component
+This component renders the signup form and provides navigation to the login page and home page.
+*/
+
 import SignupForm from "../components/SignupForm";
 import ActionButton from "../components/ActionButton";
 

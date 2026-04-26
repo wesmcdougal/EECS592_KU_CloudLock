@@ -16,6 +16,10 @@ router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 
 @router.post("")
 async def create_recovery_record(payload: CreateRecoveryRequest):
+    """
+    Create a new recovery record for the user. This is called when generating a new QR code for account recovery.
+    Validates the input and stores the recovery information securely.
+    """
     if payload.version != 1:
         raise HTTPException(status_code=400, detail="Unsupported recovery version")
 
@@ -37,6 +41,9 @@ async def create_recovery_record(payload: CreateRecoveryRequest):
 
 @router.get("/{user_id}", response_model=RecoveryResponse)
 async def get_recovery_record(user_id: UUID):
+    """
+    Retrieve the recovery record for a user.
+    """
     try:
         record = db.get_recovery(str(user_id))
     except Exception as exc:
@@ -50,6 +57,9 @@ async def get_recovery_record(user_id: UUID):
 
 @router.post("/complete")
 async def complete_recovery(payload: CompleteRecoveryRequest):
+    """
+    Complete the recovery process by rotating the recovery record with new information.
+    """
     if payload.version != 1:
         raise HTTPException(status_code=400, detail="Unsupported recovery version")
 

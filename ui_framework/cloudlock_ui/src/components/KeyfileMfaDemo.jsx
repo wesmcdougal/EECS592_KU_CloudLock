@@ -1,3 +1,9 @@
+/*
+Key File MFA Demo Component
+This component demonstrates the enrollment and verification process for a key file-based MFA method.
+Can probably be removed along with the related backend endpoints, initially intended as a test component
+*/
+
 import React, { useState } from "react";
 
 // Example: Key File MFA Enrollment and Verification

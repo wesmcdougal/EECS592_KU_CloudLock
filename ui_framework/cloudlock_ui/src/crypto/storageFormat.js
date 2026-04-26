@@ -1,3 +1,7 @@
+/*
+Storage format utilities
+*/
+
 // Pending Vault Operations Queue
 const VAULT_OPS_QUEUE_KEY = 'cloudlock_vault_ops_queue';
 

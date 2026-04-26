@@ -1,3 +1,10 @@
+/*
+Offline Unlock Modal Component
+This component provides a modal dialog for users to unlock their vault in offline mode using their email and master password.
+It attempts to load the cached encrypted vault and decrypt it with the derived master key to verify the password.
+If successful, it allows the user to access their vault without needing a backend token.
+*/
+
 import { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { deriveKey } from "../crypto/keyDerivation";
