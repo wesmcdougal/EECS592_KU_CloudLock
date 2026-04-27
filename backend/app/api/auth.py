@@ -12,12 +12,17 @@ Serves as the primary auth entry point for account access. Responsibilities incl
 Revision History:
 - Wesley McDougal - 29MAR2026 - Added MFA challenge verification and login gate flow
 """
+
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import re
 import time
+import logging
+
 
 from jose import JWTError, jwt
+
+logger = logging.getLogger("cloudlock")
 
 from app.models.schemas import (
     LoginRequest,
@@ -67,19 +72,20 @@ async def register(request: RegisterRequest):
             mfa_enrollment=request.mfa_enrollment,
             proposed_user_id=request.proposed_user_id or None,
         )
-
+        logger.info(f"User registered: {user.user_id}")
         return RegisterResponse(
             message="User registered successfully",
             user_id=user.user_id,
             created_at=user.created_at,
         )
-
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+        logger.warning(f"Registration conflict: {exc}")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Registration conflict.")
     except Exception as exc:
+        logger.exception(f"Registration failed: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Registration failed: {exc}",
+            detail="Registration failed due to server error.",
         )
 
 # ============ USER LOGIN ============
@@ -90,25 +96,29 @@ async def login(request: LoginRequest):
     Authenticate user and return a JWT.
     Verifies the client-derived auth_verifier against its bcrypt hash.
     """
+
     user = db.get_user_for_login(
         email_lookup=request.email_lookup,
         username_lookup=request.username_lookup,
     )
 
     if not user:
+        logger.warning(f"Failed login attempt: unknown user {request.email_lookup or request.username_lookup}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
 
     if user.account_status != "active":
+        logger.warning(f"Login attempt for inactive account: {user.user_id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Account is {user.account_status}",
+            detail="Account is not active",
         )
 
     if not db.verify_auth_verifier(request.auth_verifier, user.verifier_hash):
         db.increment_failed_attempts(user.user_id)
+        logger.warning(f"Failed login: invalid verifier for user {user.user_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
@@ -116,6 +126,7 @@ async def login(request: LoginRequest):
 
     db.reset_failed_attempts(user.user_id)
     db.update_last_login(user.user_id)
+    logger.info(f"Successful login for user {user.user_id}")
 
     if user.mfa_enabled:
         challenge_token = db.create_mfa_challenge(
@@ -189,6 +200,11 @@ async def request_image_challenge_from_mfa(request: MfaImageChallengeRequest):
 
 @router.post("/login/mfa/verify", response_model=MfaLoginVerifyResponse)
 async def verify_login_mfa(request: MfaLoginVerifyRequest):
+    """
+    Verify the MFA challenge response for a login attempt.
+     Validates the MFA token, checks the provided TOTP code or biometric device ID,
+     and issues a session token if successful. Also checks for suspicious context to potentially trigger image auth.
+     """
     challenge = db.verify_mfa_challenge(request.mfa_challenge_token)
     if not challenge:
         raise HTTPException(
@@ -365,6 +381,7 @@ async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
     db.delete_session(token)
     return {"message": "Logged out successfully"}
 
+# ============ ACCOUNT DELETION ============
 
 @router.post("/delete-account", response_model=DeleteAccountResponse)
 async def delete_account(

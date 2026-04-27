@@ -1,3 +1,10 @@
+/*
+Recovery QR Step Component
+This component is responsible for generating a recovery QR code during the registration process.
+It creates a recovery record on the backend with the encrypted master key and generates a QR code containing the necessary information for account recovery.
+The user can download or print the QR code, and there is also a manual code fallback for entry without scanning.
+*/
+
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { encryptMasterKeyWithRecovery } from '../crypto/recovery';

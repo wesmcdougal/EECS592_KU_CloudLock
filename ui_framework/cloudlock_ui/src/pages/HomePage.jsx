@@ -1,3 +1,8 @@
+/*
+Home Page Component
+Displays an introductory animation and provides navigation to login and signup pages.
+*/
+
 import { useEffect, useState } from "react";
 import ActionButton from "../components/ActionButton";
 import cloudlockIntro from "../assets/cloudlock_intro.gif";

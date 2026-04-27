@@ -1,3 +1,8 @@
+/*
+Login Page Component
+This component renders the login form and provides navigation to the signup page and home page.
+It also includes a button to open the offline unlock modal for users who want to access their vault without an internet connection.
+*/
 
 import LoginForm from "../components/LoginForm";
 import ActionButton from "../components/ActionButton";

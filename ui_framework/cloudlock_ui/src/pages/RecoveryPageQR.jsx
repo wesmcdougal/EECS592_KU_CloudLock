@@ -1,3 +1,10 @@
+/*
+Recovery Page Component
+This component allows users to recover their account using a recovery QR code or manual text code.
+It handles the entire recovery flow, including validating the input, communicating with the server,
+decrypting the master key, rotating the recovery record, and providing the user with a new recovery QR code.
+*/
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';

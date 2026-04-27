@@ -1,3 +1,8 @@
+/*
+Auth Context
+This context provides authentication state and functions to the rest of the application.
+*/
+
 import { createContext, useState } from "react";
 
 import { setAccessToken } from "../api/apiService";

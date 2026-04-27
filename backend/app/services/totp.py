@@ -1,3 +1,8 @@
+"""
+TOTP (Time-Based One-Time Password) utility functions for generating secrets, building provisioning URIs, and verifying codes.
+Provides the necessary functionality to support TOTP-based MFA.
+"""
+
 import base64
 import hashlib
 from Crypto.Cipher import AES

@@ -1,3 +1,8 @@
+/*
+API Service for the UI to interact with the backend API.
+Provides helper functions for making authenticated requests, handling timeouts, and parsing responses.
+*/
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 let accessToken = localStorage.getItem('cloudlock_token') || null;

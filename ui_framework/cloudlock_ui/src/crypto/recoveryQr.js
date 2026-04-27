@@ -1,4 +1,6 @@
-// QR recovery helpers built around existing recovery.js flow
+/* 
+QR recovery helpers built around existing recovery.js flow
+*/
 
 const QR_VERSION = 1;
 const RECOVERY_SECRET_BYTES = 32; // 256-bit

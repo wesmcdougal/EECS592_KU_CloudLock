@@ -15,11 +15,14 @@ Revision History:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
+
 from app.config import settings
 from app.models.schemas import HealthResponse
+from app.middleware.middleware import ExceptionLoggingMiddleware
 
 # Import routers
 from app.api import auth, mfa, vault, recovery
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -29,6 +32,9 @@ app = FastAPI(
     docs_url="/docs",  # Swagger UI
     redoc_url="/redoc"  # ReDoc
 )
+
+# Register exception logging middleware
+app.add_middleware(ExceptionLoggingMiddleware)
 
 # CORS Configuration
 app.add_middleware(

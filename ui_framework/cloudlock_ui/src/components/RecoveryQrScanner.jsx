@@ -1,3 +1,9 @@
+/*
+Recovery QR Scanner Component
+This component uses the Html5Qrcode library to access the user's camera and scan a QR code for the recovery process.
+It handles starting and stopping the scanner, and calls the provided callbacks on successful decode or error.
+ */
+
 import { useEffect } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 

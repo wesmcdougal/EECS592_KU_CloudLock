@@ -1,6 +1,7 @@
-// src/crypto/passwordGenerator.js
+/*
+Function that generates a strong password for user. Currently static at 16 characters.
+*/
 
-// Function that generates a strong password for user. Currently static at 16 characters.
 export function generateStrongPassword(length = 16) {  
     
     // Pool of upper, lower, num, and symbols. 

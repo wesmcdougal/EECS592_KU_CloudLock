@@ -1,5 +1,7 @@
-// Utility for zero-knowledge emergency recovery
-// Derives a recovery key from user input and encrypts the master key
+/*
+Utility for zero-knowledge emergency recovery
+Derives a recovery key from user input and encrypts the master key
+*/
 
 import { deriveKey } from './keyDerivation';
 import { encryptData } from './encrypt.js';

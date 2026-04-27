@@ -1,3 +1,9 @@
+/*
+Vault API Service
+Provides functions to interact with the vault-related endpoints of the backend API.
+Handles saving and retrieving the encrypted vault data for the user.
+*/
+
 import { get, post } from './apiService';
 
 export async function saveVault(encryptedVault) {

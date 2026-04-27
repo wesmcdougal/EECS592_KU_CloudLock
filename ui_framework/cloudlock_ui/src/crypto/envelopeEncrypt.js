@@ -1,5 +1,7 @@
-// Envelope encryption utility for zero-knowledge storage
-// Uses Web Crypto API for all cryptographic operations
+/*
+Envelope encryption utility for zero-knowledge storage
+Uses Web Crypto API for all cryptographic operations
+*/
 
 import { encryptData } from './encrypt';
 

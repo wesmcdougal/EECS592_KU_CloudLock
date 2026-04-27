@@ -131,6 +131,10 @@ async def update_mfa_preferences(
     request: UpdateMfaPreferencesRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """
+    Update the user's MFA method preferences. Accepts a list of enabled methods (e.g. biometric, totp).
+    Validates the input and updates the user's MFA settings accordingly.
+    """
     user_id = _get_user_id(credentials)
     methods = []
     if request.enable_biometric:
@@ -149,6 +153,9 @@ async def register_biometric_device(
     request: RegisterBiometricDeviceRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """
+    Register a new biometric device for the user. Validates the input and stores the device information.
+    """
     user_id = _get_user_id(credentials)
     try:
         device = db.register_biometric_device(
@@ -169,6 +176,9 @@ async def revoke_biometric_device(
     device_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """
+    Revoke a registered biometric device. Validates the device belongs to the user and removes it from their account.
+    """
     user_id = _get_user_id(credentials)
     try:
         removed = db.revoke_biometric_device(user_id, device_id)
@@ -247,6 +257,9 @@ def _decode_totp_setup_token(token: str) -> dict[str, Any] | None:
 
 @router.post("/totp/setup/start", response_model=TotpSetupStartResponse)
 async def start_totp_setup(request: TotpSetupStartRequest):
+    """
+    Start the TOTP setup process by generating a secret and returning the necessary information for the user to configure their authenticator app.
+    """
     user = db.get_user_by_id(request.user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -265,6 +278,9 @@ async def start_totp_setup(request: TotpSetupStartRequest):
 
 @router.post("/totp/setup/verify", response_model=TotpSetupVerifyResponse)
 async def verify_totp_setup(request: TotpSetupVerifyRequest):
+    """
+    Verify the TOTP code provided by the user during setup. If valid, confirm the TOTP method for the user's account.
+    """
     payload = _decode_totp_setup_token(request.setup_token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired setup token")

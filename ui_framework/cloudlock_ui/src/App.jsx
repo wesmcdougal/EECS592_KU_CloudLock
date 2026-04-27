@@ -1,3 +1,8 @@
+/*
+Main application component that sets up routing and authentication context
+This component uses React Router for navigation and provides the AuthContext to manage authentication state across the app.
+*/
+
 import { Routes, Route, useNavigate } from "react-router-dom";
 import { useContext } from "react";
 
